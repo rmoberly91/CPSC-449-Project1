@@ -53,7 +53,35 @@ def create_inventory():
         'quantity': data['quantity'],
         'price': data['price'],
         'description': data['description'],
-        'id': len(inventory) + 1
+        'id': len(inventory) + 1,
+        'owner': get_jwt_identity()
     }
     inventory.append(new_item)
     return jsonify({'message': 'Item added to inventory'}), 201
+
+@app.route('/inventory', methods=['GET'])
+@jwt_required()
+def get_inventory():
+    user = get_jwt_identity()
+    user_inventory = [item for item in inventory if item['owner'] == user]
+    return jsonify(user_inventory), 200
+
+@app.route('/inventory/<int:item_id>', methods=['PUT'])
+@jwt_required()
+def update_inventory(item_id):
+    data = request.json()
+    item = next((item for item in inventory if item['id'] == item_id), None)
+    if item:
+        item.update(data)
+        return jsonify({'message': 'Item updated successfully'}), 200
+    return jsonify({'message': 'Item not found'}), 404
+
+@app.route('/inventory/<int:item_id>', methods=['DELETE'])
+@jwt_required()
+def delete_inventory(item_id):
+    global inventory
+    inventory = [item for item in inventory if item['id'] != item_id]
+    return jsonify({'message': 'Item deleted successfully'}), 200
+
+if __name__ == '__main__':
+    app.run(debug=True)
