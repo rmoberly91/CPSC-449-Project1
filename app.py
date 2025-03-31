@@ -1,4 +1,4 @@
-from flask import Flask, rquest, jsonify, session, make_response
+from flask import Flask, request, jsonify, session, make_response
 import jwt
 import datetime
 
@@ -7,6 +7,12 @@ app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
 app.config['JWT_SECRET_KEY'] = 'insert_your_jwt_secret_key_here'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = datetime.timedelta(days=30)
+app.config['SESSION_COOKIE_NAME'] = 'bakery_app_session'
+app.config['SESSION_PERMANENT'] = False
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=1)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = False
+
 
 jwt = JWTManager(app)
 
@@ -34,9 +40,12 @@ def login():
 
     user = next((u for u in users if u['username'] == username and u['password'] == password), None)
     if user:
+        session['user'] = username
+        response = make_response(jsonify({'message': 'Login successful'}))
+        response.set_cookie('username', username, httponly = True, max_age = 3600) 
         access_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
         refresh_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_REFRESH_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
-        return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200
+        return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200 
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/logout', methods=['POST'])
