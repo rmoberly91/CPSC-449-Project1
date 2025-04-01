@@ -17,7 +17,16 @@ app.config['SESSION_COOKIE_SECURE'] = False
 jwt = JWTManager(app)
 
 users = []
-inventory = []
+#needs auto creation of ID
+inventory = [
+    {'name': 'cookie', 'description': 'chocolate chip cookie', 'quantity': 15, 'price': 2.50},
+    {'name': 'cake', 'description': 'chantilly cake round', 'quantity': 5, 'price': 20.00},
+    {'name': 'donut', 'description': 'jelly-filled donut', 'quantity': 40, 'price': 2.00},
+    {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00},
+    {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00},
+    {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00}, 
+    {'name': '', 'description': '', 'quantity': '', 'price': 0.00}, # Placeholder for new items
+]
 
 @app.route('/register', methods=['POST'])
 def register():
