@@ -25,7 +25,7 @@ inventory = [
     {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00},
     {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00},
     {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00}, 
-    {'name': '', 'description': '', 'quantity': '', 'price': 0.00}, # Placeholder for new items
+    {'name': '', 'description': '', 'quantity': 0, 'price': 0.00}, # Placeholder for new items
 ]
 
 @app.route('/register', methods=['POST'])
@@ -59,8 +59,11 @@ def login():
 
 @app.route('/logout', methods=['POST'])
 def logout():
+    session.pop('user', None)
+    response = make_response(jsonify({'message': 'Logout successful'}))
+    response.set_cookie('username', '', expires=0)
     # Invalidate the tokens (this is a placeholder, implement your own logic)
-    return jsonify({'message': 'Logged out successfully'}), 200
+    return response, 200
 
 @app.route('/inventory', methods=['POST'])
 @jwt_required()
