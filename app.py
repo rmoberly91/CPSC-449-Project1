@@ -48,16 +48,25 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
+    
+    if not data or 'username' not in data or 'password' not in data:
+        return jsonify({'message': 'Username and password are required'}), 400
+    
     username = data['username']
     password = data['password']
     
     user = next((u for u in users if u['username'] == username), None)
     if user and check_password_hash(user['password'], password):
         session['user'] = username
+        session.permanent = True
+        
         response = make_response(jsonify({'message': 'Login successful'}))
-        response.set_cookie('username', username, httponly = True, max_age = 3600) 
+        response.set_cookie('username', username, httponly = True, 
+                            secure = True, max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
+        
         access_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
         refresh_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_REFRESH_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
+        
         return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200 
     return jsonify({'message': 'Invalid credentials'}), 401
 
