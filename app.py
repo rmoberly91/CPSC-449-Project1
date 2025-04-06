@@ -3,6 +3,7 @@ import jwt
 from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, create_access_token, create_refresh_token
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
+import re
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
@@ -34,7 +35,22 @@ inventory = [
 
 @app.route('/register', methods=['POST'])
 def register():
+    # check that user and pass were entered
+    if not request.json or 'username' not in request.json or 'password' not in request.json:
+        return jsonify({'error': 'Username and password are required'}), 400
+    
     data = request.get_json()
+
+    # registration validation
+    if not isinstance(data['username'], str):
+        return jsonify({'error': 'Username must be a string'}), 400
+    if len(data['password']) < 8 or not re.search(r"[A-Z]", data['password']) or not re.search(r"[0-9]", data['password']):
+        return jsonify({'error': 'Password must be at least 8 characters long, containing at least one uppercase letter and at least one number'}), 400
+    if not re.match(r"^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", data['email']):
+        return jsonify({'error': 'Email must be valid'}), 400
+    if data['username'] in users or data['email'] in users:
+        return jsonify({'error': 'User already exists'}), 400
+    
     #we need a way to encrypt the password before storing it
     new_user = {
         'username': data['username'],
@@ -82,6 +98,21 @@ def logout():
 @jwt_required()
 def create_inventory():
     data = request.get_json()
+
+    # item validation
+    if not isinstance(data['name'], str):
+        return jsonify({'error': 'Name must be a string'}, 400)
+    if not isinstance(data['description'], str):
+        return jsonify({'error': 'Description must be a string'}, 400)
+    if not isinstance(data['quantity'], int):
+        return jsonify({'error': 'Quantity must be an integer'}, 400)
+    if not re.match(r"^[1-9][0-9]+\.[0-9]{2}$", data['price']):
+        return jsonify({'error': 'Price must be in US currency format'}, 400)
+    if not isinstance(data['id'], int):
+        return jsonify({'error': 'ID must be an integer'}, 400)
+    if data['name'] in inventory or data['id'] in inventory:
+        return jsonify('error': 'Item already exists')
+
     new_item = {
         'name': data['name'],
         'description': data['description'],
