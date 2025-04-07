@@ -84,7 +84,7 @@ def register():
         return jsonify({'error': 'Password must be at least 8 characters long, containing at least one uppercase letter and at least one number'}), 400
     if not re.match(r"^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", data['email']):
         return jsonify({'error': 'Email must be valid'}), 400
-    if data['username'] in users or data['email'] in users:
+    if any(u['username'] == data['username'] for u in users) or any(u['email'] == data['email'] for u in users):
         return jsonify({'error': 'User already exists'}), 400
     
     #we need a way to encrypt the password before storing it
@@ -142,19 +142,17 @@ def create_inventory():
         return jsonify({'error': 'Description must be a string'}, 400)
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}, 400)
-    if not re.match(r"^[1-9][0-9]+\.[0-9]{2}$", data['price']):
+    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
         return jsonify({'error': 'Price must be in US currency format'}, 400)
-    if not isinstance(data['id'], int):
-        return jsonify({'error': 'ID must be an integer'}, 400)
-    if data['name'] in inventory or data['id'] in inventory:
-        return jsonify('error': 'Item already exists')
+    if any(item['name'] == data['name'] for item in inventory) or any(item['id'] == data['id'] for item in inventory):
+        return jsonify({'error': 'Item already exists'}), 400
 
     new_item = {
         'name': data['name'],
         'description': data['description'],
         'quantity': data['quantity'],
         'price': data['price'],
-        'id': len(inventory) + 1,
+        'id': max((item['id'] for item in inventory), default=0) + 1,
         'owner': get_jwt_identity()
     }
     inventory.append(new_item)
