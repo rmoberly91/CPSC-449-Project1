@@ -4,6 +4,7 @@ from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, creat
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import re
+import logging
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
@@ -32,6 +33,41 @@ inventory = [
     {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
     {'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify(error = str(e)), 400
+
+@app.errorhandler(401)
+def unauthenticated(e):
+    return jsonify(error = str(e)), 401
+
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify(error = str(e)), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify(error = str(e)), 404
+
+@app.errorhandler(406)
+def not_acceptable(e):
+    return jsonify(error = str(e)), 406
+
+@app.errorhandler(415)
+def unsupported_media_type(e):
+    return jsonify(error = str(e)), 415
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    return jsonify(error = str(e)), 429
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error("Unhandled Exception: %s", str(e))
+    return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
+
+
 
 @app.route('/register', methods=['POST'])
 def register():
