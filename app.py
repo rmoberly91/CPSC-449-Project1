@@ -16,9 +16,12 @@ app.config['SESSION_PERMANENT'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=1)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = False
+app.config['JWT_BLACKLIST_ENABLED'] = True
+app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 
 
 jwt = JWTManager(app)
+jwt_blacklist = set()
 
 users = [
     {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
@@ -33,6 +36,9 @@ inventory = [
     {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
     #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
+
+def check_if_token_revoked(jwt_header, jwt_payload):
+    return jwt_payload['jti'] in jwt_blacklist
 
 @app.errorhandler(400)
 def bad_request(e):
@@ -127,6 +133,9 @@ def login():
 
 @app.route('/logout', methods=['POST'])
 def logout():
+    jti = get_jwt()['jti']
+    jwt_blacklist.add(jti)
+    
     session.pop('user', None)
     response = make_response(jsonify({'message': 'Logout successful'}))
     response.set_cookie('username', '', expires=0)
