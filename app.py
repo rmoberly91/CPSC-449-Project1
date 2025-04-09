@@ -126,7 +126,7 @@ def login():
         response.set_cookie('username', 
                             username, 
                             httponly=True, 
-                            secure=False, 
+                            secure=True, 
                             max_age=app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
         access_token = create_access_token(identity=username)
