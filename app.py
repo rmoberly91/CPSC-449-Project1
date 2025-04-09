@@ -116,8 +116,8 @@ def login():
         response.set_cookie('username', username, httponly = True, 
                             secure = True, max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
-        access_token = create_access_token(identity=username)
-        refresh_token = create_refresh_token(identity=username)
+        access_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
+        refresh_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_REFRESH_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
         
         return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200 
     return jsonify({'message': 'Invalid credentials'}), 401
@@ -137,13 +137,13 @@ def create_inventory():
 
     # item validation
     if not isinstance(data['name'], str):
-        return jsonify({'error': 'Name must be a string'}), 400
+        return jsonify({'error': 'Name must be a string'}, 400)
     if not isinstance(data['description'], str):
-        return jsonify({'error': 'Description must be a string'}), 400
+        return jsonify({'error': 'Description must be a string'}, 400)
     if not isinstance(data['quantity'], int):
-        return jsonify({'error': 'Quantity must be an integer'}), 400
-    if not isinstance(data['price'], float) or not re.match(r"^\d+\.\d{2}$", f"{data['price']:.2f}"):
-        return jsonify({'error': 'Price must be in US currency format'}), 400
+        return jsonify({'error': 'Quantity must be an integer'}, 400)
+    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
+        return jsonify({'error': 'Price must be in US currency format'}, 400)
     if any(item['name'] == data['name'] for item in inventory) or any(item['id'] == data['id'] for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
