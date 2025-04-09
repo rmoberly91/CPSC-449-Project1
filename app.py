@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, session, make_response
 import jwt
-from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, create_access_token, create_refresh_token
+from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, create_access_token, create_refresh_token, get_jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import re
@@ -13,17 +13,20 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = datetime.timedelta(days=30)
 app.config['SESSION_COOKIE_NAME'] = 'bakery_app_session'
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=1)
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
+app.config['JWT_BLACKLIST_ENABLED'] = True
+app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 
 
 jwt = JWTManager(app)
+jwt_blacklist = set()
 
 users = [
     {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
 ]
-
+#needs auto creation of ID
 inventory = [
     {'name': 'cookie', 'description': 'chocolate chip cookie', 'quantity': 15, 'price': 2.50, 'id': 1, 'owner': 'Adam'},
     {'name': 'cake', 'description': 'chantilly cake round', 'quantity': 5, 'price': 20.00, 'id': 2, 'owner': 'Adam'},
@@ -31,52 +34,13 @@ inventory = [
     {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00, 'id': 4, 'owner': 'Adam'},
     {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00, 'id': 5, 'owner': 'Adam'},
     {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
-    {'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
+    #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
 
-@app.errorhandler(400)
-def bad_request(e):
-    return jsonify(error = str(e)), 400
-
-@app.errorhandler(401)
-def unauthenticated(e):
-    return jsonify(error = str(e)), 401
-
-@app.errorhandler(403)
-def forbidden(e):
-    return jsonify(error = str(e)), 403
-
-@app.errorhandler(404)
-def not_found(e):
-    return jsonify(error = str(e)), 404
-
-@app.errorhandler(406)
-def not_acceptable(e):
-    return jsonify(error = str(e)), 406
-
-@app.errorhandler(415)
-def unsupported_media_type(e):
-    return jsonify(error = str(e)), 415
-
-@app.errorhandler(429)
-def too_many_requests(e):
-    return jsonify(error = str(e)), 429
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    logging.error("Unhandled Exception: %s", str(e))
-    return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
-
-@app.before_request
-def check_session_expiration():
-    if 'user' in session:
-        # Check if the session is expired; this is known if the user is in session, but the cookie is expired
-        if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
-            session.pop('user', None) 
-            response = make_response(jsonify({'message': 'Your session has expired. Please log in again.'}), 401)
-            response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
-            response.set_cookie('username', '', httponly=True, secure=True, expires=0)
-            return response
+@jwt.token_in_blocklist_loader
+def check_if_token_revoked(jwt_header, jwt_payload):
+    jti = jwt_payload['jti']
+    return jti in jwt_blacklist
 
 
 @app.route('/register', methods=['POST'])
@@ -120,41 +84,51 @@ def login():
     user = next((u for u in users if u['username'] == username), None)
     if user and check_password_hash(user['password'], password):
         session['user'] = username
+        #session['start_time'] = datetime.datetime.now(datetime.timezone.utc)  # Updated to use timezone-aware datetime
         session.permanent = True
         
         response = make_response(jsonify({'message': 'Login successful'}))
-        response.set_cookie('username', username, httponly = True, 
-                            secure = True, max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
-        access_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
-        refresh_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_REFRESH_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
+        response.set_cookie('username', 
+                            username, 
+                            httponly=True, 
+                            secure=False, 
+                            max_age=app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
+        
+        access_token = create_access_token(identity=username)
+        refresh_token = create_refresh_token(identity=username)
         
         return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200 
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/logout', methods=['POST'])
+@jwt_required()
 def logout():
+    jti = get_jwt()['jti']
+    jwt_blacklist.add(jti)
     session.pop('user', None)
     response = make_response(jsonify({'message': 'Logout successful'}))
-    response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
     response.set_cookie('username', '', expires=0)
+    response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
     return response, 200
 
 @app.route('/inventory', methods=['POST'])
 @jwt_required()
 def create_inventory():
     data = request.get_json()
+    if not data:
+        return jsonify({'error': 'No input data provided'}), 400
 
     # item validation
     if not isinstance(data['name'], str):
-        return jsonify({'error': 'Name must be a string'}, 400)
+        return jsonify({'error': 'Name must be a string'}), 400
     if not isinstance(data['description'], str):
-        return jsonify({'error': 'Description must be a string'}, 400)
+        return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
-        return jsonify({'error': 'Quantity must be an integer'}, 400)
+        return jsonify({'error': 'Quantity must be an integer'}), 400
     if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
-        return jsonify({'error': 'Price must be in US currency format'}, 400)
-    if any(item['name'] == data['name'] for item in inventory) or any(item['id'] == data['id'] for item in inventory):
+        return jsonify({'error': 'Price must be in US currency format'}), 400
+    if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
     new_item = {
@@ -180,8 +154,11 @@ def get_inventory():
 def update_inventory(item_id):
     user = get_jwt_identity()
     data = request.get_json()
-    item = next((item for item in inventory if item['id'] == item_id), None)
+
+    item = next((item for item in inventory if item['id'] == item_id), None)    
     
+    if 'price' in data and (not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price']))):
+        return jsonify({'error': 'Invalid price format'}), 400
     if not item:
         return jsonify({'message': 'Item not found'}), 404
 
@@ -206,6 +183,24 @@ def delete_inventory(item_id):
 
     inventory = [item for item in inventory if item['id'] != item_id]
     return jsonify({'message': 'Item deleted successfully'}), 200
+
+@app.route('/admin/inventory', methods=['GET'])
+@jwt_required()
+def get_all_inventory_admin():
+    username = get_jwt_identity()
+    user = next((u for u in users if u['username'] == username), None)
+
+    if not user or not user.get('is_admin'):
+        return jsonify({'message': 'Unauthorized: Admin access required'}), 403
+
+    return jsonify(inventory), 200
+
+@app.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    identity = get_jwt_identity()
+    new_token = create_access_token(identity=identity)
+    return jsonify({'access_token': new_token}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
