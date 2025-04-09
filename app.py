@@ -31,7 +31,7 @@ inventory = [
     {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00, 'id': 4, 'owner': 'Adam'},
     {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00, 'id': 5, 'owner': 'Adam'},
     {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
-    {'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
+    #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
 
 @app.errorhandler(400)
@@ -137,13 +137,13 @@ def create_inventory():
 
     # item validation
     if not isinstance(data['name'], str):
-        return jsonify({'error': 'Name must be a string'}, 400)
+        return jsonify({'error': 'Name must be a string'}), 400
     if not isinstance(data['description'], str):
-        return jsonify({'error': 'Description must be a string'}, 400)
+        return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
-        return jsonify({'error': 'Quantity must be an integer'}, 400)
+        return jsonify({'error': 'Quantity must be an integer'}), 400
     if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
-        return jsonify({'error': 'Price must be in US currency format'}, 400)
+        return jsonify({'error': 'Price must be in US currency format'}), 400
     if any(item['name'] == data['name'] for item in inventory) or any(item['id'] == data['id'] for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
@@ -170,14 +170,16 @@ def get_inventory():
 def update_inventory(item_id):
     user = get_jwt_identity()
     data = request.get_json()
-    item = next((item for item in inventory if item['id'] == item_id), None)
     
+    if 'price' in data and (not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price']))):
+        return jsonify({'error': 'Invalid price format'}), 400
     if not item:
         return jsonify({'message': 'Item not found'}), 404
 
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
 
+    item = next((item for item in inventory if item['id'] == item_id), None)    
     item.update(data)
     return jsonify({'message': 'Item updated successfully'}), 200
 
