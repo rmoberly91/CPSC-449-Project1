@@ -170,6 +170,8 @@ def get_inventory():
 def update_inventory(item_id):
     user = get_jwt_identity()
     data = request.get_json()
+
+    item = next((item for item in inventory if item['id'] == item_id), None)    
     
     if 'price' in data and (not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price']))):
         return jsonify({'error': 'Invalid price format'}), 400
@@ -179,7 +181,6 @@ def update_inventory(item_id):
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
 
-    item = next((item for item in inventory if item['id'] == item_id), None)    
     item.update(data)
     return jsonify({'message': 'Item updated successfully'}), 200
 
