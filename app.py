@@ -12,10 +12,10 @@ app.config['JWT_SECRET_KEY'] = 'insert_your_jwt_secret_key_here'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = datetime.timedelta(days=30)
 app.config['SESSION_COOKIE_NAME'] = 'bakery_app_session'
-app.config['SESSION_PERMANENT'] = False
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=1)
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_SECURE'] = True
 app.config['JWT_BLACKLIST_ENABLED'] = True
 app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
 
@@ -39,6 +39,8 @@ inventory = [
 
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(jwt_header, jwt_payload):
+    jti = jwt_payload['jti']
+    return jti in jwt_blacklist
     return jwt_payload['jti'] in jwt_blacklist
 
 @app.errorhandler(400)
@@ -73,7 +75,6 @@ def too_many_requests(e):
 def handle_exception(e):
     logging.error("Unhandled Exception: %s", str(e))
     return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
-
 
 
 @app.route('/register', methods=['POST'])
@@ -117,14 +118,16 @@ def login():
     user = next((u for u in users if u['username'] == username), None)
     if user and check_password_hash(user['password'], password):
         session['user'] = username
+        #session['start_time'] = datetime.datetime.now(datetime.timezone.utc)  # Updated to use timezone-aware datetime
         session.permanent = True
         
         response = make_response(jsonify({'message': 'Login successful'}))
+        
         response.set_cookie('username', 
                             username, 
-                            httponly = True, 
-                            secure = False, 
-                            max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
+                            httponly=True, 
+                            secure=False, 
+                            max_age=app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
         access_token = create_access_token(identity=username)
         refresh_token = create_refresh_token(identity=username)
@@ -137,11 +140,10 @@ def login():
 def logout():
     jti = get_jwt()['jti']
     jwt_blacklist.add(jti)
-    
     session.pop('user', None)
     response = make_response(jsonify({'message': 'Logout successful'}))
     response.set_cookie('username', '', expires=0)
-    # Invalidate the tokens (this is a placeholder, implement your own logic)
+    response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
     return response, 200
 
 @app.route('/inventory', methods=['POST'])
@@ -149,12 +151,7 @@ def logout():
 def create_inventory():
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'Invalid or missing JSON'}), 400
-
-    # Field presence check
-    for field in ['name', 'description', 'quantity', 'price']:
-        if field not in data:
-            return jsonify({'error': f'{field.capitalize()} is required'}), 400
+        return jsonify({'error': 'No input data provided'}), 40
 
     # Type checks
     if not isinstance(data['name'], str):
@@ -163,10 +160,9 @@ def create_inventory():
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
-    if not isinstance(data['price'], (int, float)):
-        return jsonify({'error': 'Price must be a number'}), 400
 
-    # Check for duplicates
+    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
+        return jsonify({'error': 'Price must be in US currency format'}), 400
     if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
