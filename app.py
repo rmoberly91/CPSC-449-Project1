@@ -4,7 +4,7 @@ from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, creat
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import re
-import logging
+import logging  
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
@@ -41,6 +41,40 @@ inventory = [
 def check_if_token_revoked(jwt_header, jwt_payload):
     jti = jwt_payload['jti']
     return jti in jwt_blacklist
+    return jwt_payload['jti'] in jwt_blacklist
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify(error = str(e)), 400
+
+@app.errorhandler(401)
+def unauthenticated(e):
+    return jsonify(error = str(e)), 401
+
+@app.errorhandler(403)
+def forbidden(e):
+    return jsonify(error = str(e)), 403
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify(error = str(e)), 404
+
+@app.errorhandler(406)
+def not_acceptable(e):
+    return jsonify(error = str(e)), 406
+
+@app.errorhandler(415)
+def unsupported_media_type(e):
+    return jsonify(error = str(e)), 415
+
+@app.errorhandler(429)
+def too_many_requests(e):
+    return jsonify(error = str(e)), 429
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.error("Unhandled Exception: %s", str(e))
+    return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
 
 
 @app.route('/register', methods=['POST'])
@@ -117,20 +151,22 @@ def logout():
 def create_inventory():
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'No input data provided'}), 400
+        return jsonify({'error': 'No input data provided'}), 40
 
-    # item validation
+    # Type checks
     if not isinstance(data['name'], str):
         return jsonify({'error': 'Name must be a string'}), 400
     if not isinstance(data['description'], str):
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
+
     if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
         return jsonify({'error': 'Price must be in US currency format'}), 400
     if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
+    # Create item
     new_item = {
         'name': data['name'],
         'description': data['description'],
