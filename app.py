@@ -4,7 +4,7 @@ from flask_jwt_extended import JWTManager, jwt_required, get_jwt_identity, creat
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import re
-import logging
+import logging  
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
@@ -149,6 +149,9 @@ def logout():
 def create_inventory():
     data = request.get_json()
 
+    if not data:
+        return jsonify({'error': 'No input data provided'}), 400
+
     # item validation
     if not isinstance(data['name'], str):
         return jsonify({'error': 'Name must be a string'}), 400
@@ -158,9 +161,9 @@ def create_inventory():
         return jsonify({'error': 'Quantity must be an integer'}), 400
     if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
         return jsonify({'error': 'Price must be in US currency format'}), 400
-    if any(item['name'] == data['name'] for item in inventory) or any(item['id'] == data['id'] for item in inventory):
+    if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
-
+    
     new_item = {
         'name': data['name'],
         'description': data['description'],
