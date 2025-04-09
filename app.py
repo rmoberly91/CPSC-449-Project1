@@ -204,6 +204,20 @@ def update_inventory(item_id):
     item.update(data)
     return jsonify({'message': 'Item updated successfully'}), 200
 
+@app.route('/inventory/<int:item_id>', methods=['GET'])
+@jwt_required()
+def get_single_inventory(item_id):
+    user = get_jwt_identity()
+    item = next((item for item in inventory if item['id'] == item_id), None)
+
+    if not item:
+        return jsonify({'message': 'Item not found'}), 404
+
+    if item.get('owner') != user:
+        return jsonify({'message': 'Unauthorized'}), 403
+
+    return jsonify(item), 200
+
 @app.route('/inventory/<int:item_id>', methods=['DELETE'])
 @jwt_required()
 def delete_inventory(item_id):
