@@ -159,8 +159,8 @@ def create_inventory():
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
-    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
-        return jsonify({'error': 'Price must be in US currency format'}), 400
+    if not isinstance(data.get('price'), (int, float)):
+        return jsonify({'error': 'Price must be a number'}), 400
     if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
     
