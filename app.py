@@ -57,16 +57,16 @@ jwt = JWTManager(app)
 jwt_blacklist = set()
 
 users = [
-    {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
+    # {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
 ]
 #needs auto creation of ID
 inventory = [
-    {'name': 'cookie', 'description': 'chocolate chip cookie', 'quantity': 15, 'price': 2.50, 'id': 1, 'owner': 'Adam'},
-    {'name': 'cake', 'description': 'chantilly cake round', 'quantity': 5, 'price': 20.00, 'id': 2, 'owner': 'Adam'},
-    {'name': 'donut', 'description': 'jelly-filled donut', 'quantity': 40, 'price': 2.00, 'id': 3, 'owner': 'Adam'},
-    {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00, 'id': 4, 'owner': 'Adam'},
-    {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00, 'id': 5, 'owner': 'Adam'},
-    {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
+    # {'name': 'cookie', 'description': 'chocolate chip cookie', 'quantity': 15, 'price': 2.50, 'id': 1, 'owner': 'Adam'},
+    # {'name': 'cake', 'description': 'chantilly cake round', 'quantity': 5, 'price': 20.00, 'id': 2, 'owner': 'Adam'},
+    # {'name': 'donut', 'description': 'jelly-filled donut', 'quantity': 40, 'price': 2.00, 'id': 3, 'owner': 'Adam'},
+    # {'name': 'pie', 'description': 'apple pie', 'quantity': 10, 'price': 12.00, 'id': 4, 'owner': 'Adam'},
+    # {'name': 'pan dulce', 'description': 'chocolate concha', 'quantity': 20, 'price': 3.00, 'id': 5, 'owner': 'Adam'},
+    # {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
     #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
 
@@ -135,7 +135,7 @@ def register():
         'is_admin': data.get('is_admin', False)
     }
     users.append(new_user)
-    return jsonify({'message': 'User registered successfully'}), 201
+    return jsonify({'message': 'User registered successfully'}), 201 # *Admin
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -236,7 +236,7 @@ def update_inventory(item_id):
 
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
-
+    # more validation needed
     item.update(data)
     return jsonify({'message': 'Item updated successfully'}), 200
 
