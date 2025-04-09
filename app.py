@@ -23,7 +23,7 @@ jwt = JWTManager(app)
 users = [
     {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
 ]
-#needs auto creation of ID
+
 inventory = [
     {'name': 'cookie', 'description': 'chocolate chip cookie', 'quantity': 15, 'price': 2.50, 'id': 1, 'owner': 'Adam'},
     {'name': 'cake', 'description': 'chantilly cake round', 'quantity': 5, 'price': 20.00, 'id': 2, 'owner': 'Adam'},
@@ -70,18 +70,13 @@ def handle_exception(e):
 @app.before_request
 def check_session_expiration():
     if 'user' in session:
-        # Update session activity
-        session.modified = True
-
-        if not session.permanent:
-            session.permanent = True
-        else:
-            if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
-                session.pop('user', None) 
-                response = make_response(jsonify({'message': 'Session expired. Please log in again.'}), 401)
-                response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
-                response.set_cookie('username', '', httponly=True, secure=True, expires=0)
-                return response
+        # Check if the session is expired; this is known if the user is in session, but the cookie is expired
+        if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
+            session.pop('user', None) 
+            response = make_response(jsonify({'message': 'Your session has expired. Please log in again.'}), 401)
+            response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
+            response.set_cookie('username', '', httponly=True, secure=True, expires=0)
+            return response
 
 
 @app.route('/register', methods=['POST'])
@@ -141,8 +136,8 @@ def login():
 def logout():
     session.pop('user', None)
     response = make_response(jsonify({'message': 'Logout successful'}))
+    response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
     response.set_cookie('username', '', expires=0)
-    # Invalidate the tokens (this is a placeholder, implement your own logic)
     return response, 200
 
 @app.route('/inventory', methods=['POST'])
