@@ -116,8 +116,8 @@ def login():
         response.set_cookie('username', username, httponly = True, 
                             secure = True, max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
-        access_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
-        refresh_token = jwt.encode({'username': username, 'exp': datetime.datetime.utcnow() + app.config['JWT_REFRESH_TOKEN_EXPIRES']}, app.config['JWT_SECRET_KEY'])
+        access_token = create_access_token(identity=username)
+        refresh_token = create_refresh_token(identity=username)
         
         return jsonify({'access_token': access_token, 'refresh_token': refresh_token}), 200 
     return jsonify({'message': 'Invalid credentials'}), 401
@@ -196,6 +196,17 @@ def delete_inventory(item_id):
 
     inventory = [item for item in inventory if item['id'] != item_id]
     return jsonify({'message': 'Item deleted successfully'}), 200
+
+@app.route('/admin/inventory', methods=['GET'])
+@jwt_required()
+def get_all_inventory_admin():
+    username = get_jwt_identity()
+    user = next((u for u in users if u['username'] == username), None)
+
+    if not user or not user.get('is_admin'):
+        return jsonify({'message': 'Unauthorized: Admin access required'}), 403
+
+    return jsonify(inventory), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
