@@ -148,22 +148,29 @@ def logout():
 @jwt_required()
 def create_inventory():
     data = request.get_json()
-
     if not data:
-        return jsonify({'error': 'No input data provided'}), 400
+        return jsonify({'error': 'Invalid or missing JSON'}), 400
 
-    # item validation
+    # Field presence check
+    for field in ['name', 'description', 'quantity', 'price']:
+        if field not in data:
+            return jsonify({'error': f'{field.capitalize()} is required'}), 400
+
+    # Type checks
     if not isinstance(data['name'], str):
         return jsonify({'error': 'Name must be a string'}), 400
     if not isinstance(data['description'], str):
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
-    if not isinstance(data.get('price'), (int, float)):
+    if not isinstance(data['price'], (int, float)):
         return jsonify({'error': 'Price must be a number'}), 400
+
+    # Check for duplicates
     if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
-    
+
+    # Create item
     new_item = {
         'name': data['name'],
         'description': data['description'],
