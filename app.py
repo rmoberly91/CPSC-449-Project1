@@ -6,8 +6,12 @@ import datetime
 import re
 import logging  
 from functools import wraps
+import os
+from dotenv import load_dotenv
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY')
 app.config['SECRET_KEY'] = 'insert_your_secret_key_here'
 app.config['JWT_SECRET_KEY'] = 'insert_your_jwt_secret_key_here'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
