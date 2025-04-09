@@ -37,6 +37,7 @@ inventory = [
     #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
 
+@jwt.token_in_blocklist_loader
 def check_if_token_revoked(jwt_header, jwt_payload):
     return jwt_payload['jti'] in jwt_blacklist
 
@@ -132,6 +133,7 @@ def login():
     return jsonify({'message': 'Invalid credentials'}), 401
 
 @app.route('/logout', methods=['POST'])
+@jwt_required()
 def logout():
     jti = get_jwt()['jti']
     jwt_blacklist.add(jti)
@@ -222,6 +224,13 @@ def get_all_inventory_admin():
         return jsonify({'message': 'Unauthorized: Admin access required'}), 403
 
     return jsonify(inventory), 200
+
+@app.route('/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    identity = get_jwt_identity()
+    new_token = create_access_token(identity=identity)
+    return jsonify({'access_token': new_token}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
