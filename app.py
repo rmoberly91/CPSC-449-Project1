@@ -113,8 +113,11 @@ def login():
         session.permanent = True
         
         response = make_response(jsonify({'message': 'Login successful'}))
-        response.set_cookie('username', username, httponly = True, 
-                            secure = True, max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
+        response.set_cookie('username', 
+                            username, 
+                            httponly = True, 
+                            secure = False, 
+                            max_age = app.config['PERMANENT_SESSION_LIFETIME'].total_seconds()) 
         
         access_token = create_access_token(identity=username)
         refresh_token = create_refresh_token(identity=username)
