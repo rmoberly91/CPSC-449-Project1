@@ -12,10 +12,10 @@ app.config['JWT_SECRET_KEY'] = 'insert_your_jwt_secret_key_here'
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = datetime.timedelta(days=30)
 app.config['SESSION_COOKIE_NAME'] = 'bakery_app_session'
-app.config['SESSION_PERMANENT'] = False
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(hours=1)
+app.config['SESSION_PERMANENT'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=1)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_SECURE'] = True
 
 
 jwt = JWTManager(app)
@@ -67,6 +67,21 @@ def handle_exception(e):
     logging.error("Unhandled Exception: %s", str(e))
     return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
 
+@app.before_request
+def check_session_expiration():
+    if 'user' in session:
+        # Update session activity
+        session.modified = True
+
+        if not session.permanent:
+            session.permanent = True
+        else:
+            if not request.cookies.get(app.config['SESSION_COOKIE_NAME']):
+                session.pop('user', None) 
+                response = make_response(jsonify({'message': 'Session expired. Please log in again.'}), 401)
+                response.set_cookie(app.config['SESSION_COOKIE_NAME'], '', httponly=True, secure=True, expires=0)
+                response.set_cookie('username', '', httponly=True, secure=True, expires=0)
+                return response
 
 
 @app.route('/register', methods=['POST'])
