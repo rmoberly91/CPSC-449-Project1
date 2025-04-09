@@ -197,5 +197,16 @@ def delete_inventory(item_id):
     inventory = [item for item in inventory if item['id'] != item_id]
     return jsonify({'message': 'Item deleted successfully'}), 200
 
+@app.route('/admin/inventory', methods=['GET'])
+@jwt_required()
+def get_all_inventory_admin():
+    username = get_jwt_identity()
+    user = next((u for u in users if u['username'] == username), None)
+
+    if not user or not user.get('is_admin'):
+        return jsonify({'message': 'Unauthorized: Admin access required'}), 403
+
+    return jsonify(inventory), 200
+
 if __name__ == '__main__':
     app.run(debug=True)
