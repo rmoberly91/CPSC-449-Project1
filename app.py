@@ -14,7 +14,7 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = datetime.timedelta(hours=1)
 app.config['JWT_REFRESH_TOKEN_EXPIRES'] = datetime.timedelta(days=30)
 app.config['SESSION_COOKIE_NAME'] = 'bakery_app_session'
 app.config['SESSION_PERMANENT'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=5)
+app.config['PERMANENT_SESSION_LIFETIME'] = datetime.timedelta(minutes=30)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['JWT_BLACKLIST_ENABLED'] = True
@@ -150,24 +150,16 @@ def login():
         
         session['user'] = username
         session['start_time'] = current_time.isoformat()
-        session.permanent = True
         
         # Generate tokens
         access_token = create_access_token(identity=username)
         refresh_token = create_refresh_token(identity=username)
         
-        response = make_response(jsonify({
-            'message': 'Login successful',
-            'access_token': access_token, 
-            'refresh_token': refresh_token
+        response = make_response(jsonify({'message': 'Login successful', 'access_token': access_token, 'refresh_token': refresh_token
         }))
         
         # Set session cookie
-        response.set_cookie('username', 
-                           username, 
-                           httponly=True, 
-                           secure=True, 
-                           max_age=app.config['PERMANENT_SESSION_LIFETIME'].total_seconds())
+        response.set_cookie('username', username, httponly=True, secure=True, max_age=app.config['PERMANENT_SESSION_LIFETIME'].total_seconds())
         
         return response, 200
     return jsonify({'message': 'Invalid credentials'}), 401
