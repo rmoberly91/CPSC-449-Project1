@@ -202,9 +202,14 @@ def create_inventory():
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
-
-    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
-        return jsonify({'error': 'Price must be in US currency format'}), 400
+    if data['quantity'] < 0: 
+        return jsonify({'error': 'Quantity can not be negative'}), 400
+    if not isinstance(data['price'], (int, float)):
+        return jsonify({'error': 'Price must be a number'}), 400
+    if data['price'] < 0: 
+        return jsonify({'error': 'Price can not be negative'}), 400
+    if isinstance(data['price'], float) and not re.match(r"^\d+(\.\d{1,2})?$", f"{data['price']:.2f}"):
+        return jsonify({'error': 'Price must be in US currency format (e.g., 12.34)'}), 400
     if any(item['name'].lower() == data['name'].lower() for item in inventory):
         return jsonify({'error': 'Item already exists'}), 400
 
@@ -244,8 +249,14 @@ def update_inventory(item_id):
         return jsonify({'error': 'Description must be a string'}), 400
     if not isinstance(data['quantity'], int):
         return jsonify({'error': 'Quantity must be an integer'}), 400
-    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
-        return jsonify({'error': 'Price must be in US currency format'}), 400
+    if data['quantity'] < 0:
+        return jsonify({'error': 'Quantity can not be negative'}), 400
+    if not isinstance(data['price'], (int, float)):
+        return jsonify({'error': 'Price must be a number'}), 400
+    if data['price'] < 0: 
+        return jsonify({'error': 'Price can not be negative'}), 400
+    if isinstance(data['price'], float) and not re.match(r"^\d+(\.\d{1,2})?$", f"{data['price']:.2f}"):
+        return jsonify({'error': 'Price must be in US currency format (e.g., 12.34)'}), 400
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
     
