@@ -227,16 +227,20 @@ def update_inventory(item_id):
     user = get_jwt_identity()
     data = request.get_json()
 
-    item = next((item for item in inventory if item['id'] == item_id), None)    
-    
-    if 'price' in data and (not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price']))):
-        return jsonify({'error': 'Invalid price format'}), 400
-    if not item:
-        return jsonify({'message': 'Item not found'}), 404
-
+    item = next((item for item in inventory if item['id'] == item_id), None)
+        
+    # Borrowed from create_inventory function
+    if not isinstance(data['name'], str):
+        return jsonify({'error': 'Name must be a string'}), 400
+    if not isinstance(data['description'], str):
+        return jsonify({'error': 'Description must be a string'}), 400
+    if not isinstance(data['quantity'], int):
+        return jsonify({'error': 'Quantity must be an integer'}), 400
+    if not isinstance(data['price'], (int, float)) or not re.match(r"^\d+(\.\d{2})?$", str(data['price'])):
+        return jsonify({'error': 'Price must be in US currency format'}), 400
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
-    # more validation needed
+    
     item.update(data)
     return jsonify({'message': 'Item updated successfully'}), 200
 
@@ -282,6 +286,8 @@ def get_all_inventory_admin():
 
     if not user or not user.get('is_admin'):
         return jsonify({'message': 'Unauthorized: Admin access required'}), 403
+    if not inventory:
+        return jsonify({'message': 'No items in inventory'}), 404
 
     return jsonify(inventory), 200
 
