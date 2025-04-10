@@ -8,6 +8,7 @@ import logging
 from functools import wraps
 import os
 from dotenv import load_dotenv
+from werkzeug.exceptions import HTTPException
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
@@ -105,8 +106,15 @@ def too_many_requests(e):
 
 @app.errorhandler(Exception)
 def handle_exception(e):
-    logging.error("Unhandled Exception: %s", str(e))
-    return jsonify({'error': 'An unexpected error occurred. Please try again later.'}), 500
+    if isinstance(e, HTTPException):
+        response = e.get_response()
+        response.data = jsonify({'error': e.description})
+        response.content_type = 'application/json'
+        return response
+    
+    app.logger.error(f'Unhandled Exception: %s', str(e), exc_info=True)
+    return jsonify({'error': 'Internal Server Error'}), 500
+    
 
 
 @app.route('/register', methods=['POST'])
