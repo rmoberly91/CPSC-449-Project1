@@ -42,7 +42,7 @@ class Inventory(db.Model):
     description = db.Column(db.String(200), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
     price = db.Column(db.Float, nullable=False)
-    #owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     owner = db.relationship('User', backref=db.backref('inventory', lazy=True))
 
 def session_jwt_required(fn):
