@@ -9,6 +9,7 @@ from functools import wraps
 import os
 from dotenv import load_dotenv
 from werkzeug.exceptions import HTTPException
+from pymongo import MongoClient
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
@@ -24,6 +25,12 @@ app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['JWT_BLACKLIST_ENABLED'] = True
 app.config['JWT_BLACKLIST_TOKEN_CHECKS'] = ['access', 'refresh']
+
+#mongoDB connection
+mongo_client = MongoClient(os.getenv('MONGODB_URI'))
+mongo_db = mongo_client['inventory_db']
+mongo_users = mongo_db['users']
+mongo_inventory = mongo_db['inventory']
 
 def session_jwt_required(fn):
     @wraps(fn)
