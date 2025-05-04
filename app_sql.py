@@ -137,16 +137,16 @@ def register():
         return jsonify({'error': 'Password must be at least 8 characters long, containing at least one uppercase letter and at least one number'}), 400
     if not re.match(r"^[a-zA-Z0-9_.-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$", data['email']):
         return jsonify({'error': 'Email must be valid'}), 400
-    if any(u['username'] == data['username'] for u in users) or any(u['email'] == data['email'] for u in users):
+    if User.query.filter_by(username=data['username']).first() or User.query.filter_by(email=data['email']).first():
         return jsonify({'error': 'User already exists'}), 400
-    
+
     #we need a way to encrypt the password before storing it
-    new_user = {
-        'username': data['username'],
-        'password': generate_password_hash(data['password']), #hash the password first
-        'email': data['email'],
-        'is_admin': data.get('is_admin', False)
-    }
+    new_user = User(
+        username=data['username'],
+        password=generate_password_hash(data['password']),
+        email=data['email'],
+        is_admin=data.get('is_admin', False)
+    )
     #users.append(new_user)
     db.session.add(new_user)
     
@@ -160,7 +160,7 @@ def login():
         return jsonify({'message': 'Username and password are required'}), 400
     
     user = User.query.filter_by(username=data['username']).first()
-    if not username:
+    if not user:
         return jsonify({'message': 'Invalid credentials'}), 401
     password = data['password']
     
@@ -218,18 +218,18 @@ def create_inventory():
         return jsonify({'error': 'Price can not be negative'}), 400
     if isinstance(data['price'], float) and not re.match(r"^\d+(\.\d{1,2})?$", f"{data['price']:.2f}"):
         return jsonify({'error': 'Price must be in US currency format (e.g., 12.34)'}), 400
-    if any(item['name'].lower() == data['name'].lower() for item in inventory):
+    
+    existing_item = Inventory.query.filter_by(name=data['name'], owner_id=user_id).first()
+    if existing_item:
         return jsonify({'error': 'Item already exists'}), 400
-
-    # Create item
-    new_item = {
-        'name': data['name'],
-        'description': data['description'],
-        'quantity': data['quantity'],
-        'price': data['price'],
-        'id': max((item['id'] for item in inventory), default=0) + 1,
-        'owner': get_jwt_identity()
-    }
+    
+    new_item = inventory(
+        name=data['name'],
+        description=data['description'],
+        quantity=data['quantity'],
+        price=data['price'],
+        owner_id=User.query.filter_by(username=session['user']).first().id
+    )
     
     db.session.add(new_item)
     db.session.commit()
@@ -251,7 +251,7 @@ def get_inventory():
             'price': item.price,
             'owner': item.owner.username
         })
-    return jsonify(user_inventory), 200
+    return jsonify(current_inventory), 200
 
 
 @app.route('/inventory/<int:item_id>', methods=['PUT'])
@@ -277,7 +277,7 @@ def update_inventory(item_id):
         return jsonify({'error': 'Price can not be negative'}), 400
     if isinstance(data['price'], float) and not re.match(r"^\d+(\.\d{1,2})?$", f"{data['price']:.2f}"):
         return jsonify({'error': 'Price must be in US currency format (e.g., 12.34)'}), 400
-    if item.get('owner') != user:
+    if item.owner.username != user:
         return jsonify({'message': 'Unauthorized'}), 403
     
     if item and item.get('owner') == user:
@@ -299,7 +299,7 @@ def get_single_inventory(item_id):
     if not item:
         return jsonify({'message': 'Item not found'}), 404
 
-    if item.get('owner') != user:
+    if item.owner.username != user:
         return jsonify({'message': 'Unauthorized'}), 403
 
     output = {
@@ -322,7 +322,7 @@ def delete_inventory(item_id):
     if not item:
         return jsonify({'message': 'Item not found'}), 404
 
-    if item.get('owner') != user:
+    if item.owner.username != user:
         return jsonify({'message': 'Unauthorized'}), 403
 
     db.session.delete(item)
