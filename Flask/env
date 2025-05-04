@@ -1,0 +1,2 @@
+SECRET_KEY=super-secret-string1124-no-peeking
+JWT_SECRET_KEY=another-random-long-secret-pls-90134-check-etc
