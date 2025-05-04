@@ -77,6 +77,7 @@ def session_jwt_required(fn):
 jwt = JWTManager(app)
 jwt_blacklist = set()
 
+'''
 users = [
     # {'username': 'Adam', 'password': generate_password_hash('Apple123'), 'email': 'adam123@mail.com', 'is_admin': True}
 ]
@@ -90,6 +91,7 @@ inventory = [
     # {'name': 'bread', 'description': 'focaccia bread', 'quantity': 6, 'price': 12.00, 'id': 6, 'owner': 'Adam'}, 
     #{'name': '', 'description': '', 'quantity': 0, 'price': 0.00, 'id': 0, 'owner': 'admin'}, # Placeholder for new items
 ]
+'''
 
 @jwt.token_in_blocklist_loader
 def check_if_token_revoked(jwt_header, jwt_payload):
@@ -162,7 +164,9 @@ def register():
         'email': data['email'],
         'is_admin': data.get('is_admin', False)
     }
-    users.append(new_user)
+    #users.append(new_user)
+    db.session.add(new_user)
+    
     return jsonify({'message': 'User registered successfully'}), 201 # *Admin
 
 @app.route('/login', methods=['POST'])
@@ -172,15 +176,16 @@ def login():
     if not data or 'username' not in data or 'password' not in data:
         return jsonify({'message': 'Username and password are required'}), 400
     
-    username = data['username']
+    user = User.query.filter_by(username=data['username']).first()
+    if not username:
+        return jsonify({'message': 'Invalid credentials'}), 401
     password = data['password']
     
-    user = next((u for u in users if u['username'] == username), None)
-    if user and check_password_hash(user['password'], password):
+    if user and check_password_hash(user.password, password):
         
         current_time = datetime.datetime.now(datetime.timezone.utc)
         
-        session['user'] = username
+        session['user'] = user.username
         session['start_time'] = current_time.isoformat()
         
         # Generate tokens
@@ -242,7 +247,10 @@ def create_inventory():
         'id': max((item['id'] for item in inventory), default=0) + 1,
         'owner': get_jwt_identity()
     }
-    inventory.append(new_item)
+    
+    db.session.add(new_item)
+    db.session.commit()
+    
     return jsonify({'message': 'Item added to inventory'}), 201
 
 
