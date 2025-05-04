@@ -257,8 +257,17 @@ def create_inventory():
 @app.route('/inventory', methods=['GET'])
 @session_jwt_required
 def get_inventory():
-    user = get_jwt_identity()
-    user_inventory = [item for item in inventory if item.get('owner') == user]
+    items = Inventory.query.all()
+    current_inventory = []
+    for item in items:
+        current_inventory.append({
+            'id': item.id,
+            'name': item.name,
+            'description': item.description,
+            'quantity': item.quantity,
+            'price': item.price,
+            'owner': item.owner.username
+        })
     return jsonify(user_inventory), 200
 
 
@@ -268,8 +277,8 @@ def update_inventory(item_id):
     user = get_jwt_identity()
     data = request.get_json()
 
-    item = next((item for item in inventory if item['id'] == item_id), None)
-        
+    item = Inventory.query.filter_by(id=item_id).first()
+
     # Borrowed from create_inventory function
     if not isinstance(data['name'], str):
         return jsonify({'error': 'Name must be a string'}), 400
@@ -288,8 +297,13 @@ def update_inventory(item_id):
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
     
-    item.update(data)
-    return jsonify({'message': 'Item updated successfully'}), 200
+    if item and item.get('owner') == user:
+       item.name = data.get('name', item.name)
+       item.description = data.get('description', item.description)         
+       item.quantity = data.get('quantity', item.quantity)
+       item.price = data.get('price', item.price)
+       db.session.commit() 
+       return jsonify({'message': 'Item updated successfully'}), 200
 
 
 
@@ -313,7 +327,7 @@ def get_single_inventory(item_id):
 def delete_inventory(item_id):
     global inventory
     user = get_jwt_identity()
-    item = next((item for item in inventory if item['id'] == item_id), None)
+    item = Inventory.query.filter_by(id=item_id).first()
 
     if not item:
         return jsonify({'message': 'Item not found'}), 404
@@ -321,7 +335,8 @@ def delete_inventory(item_id):
     if item.get('owner') != user:
         return jsonify({'message': 'Unauthorized'}), 403
 
-    inventory = [item for item in inventory if item['id'] != item_id]
+    db.session.delete(item)
+    db.session.commit()
     return jsonify({'message': 'Item deleted successfully'}), 200
 
 
