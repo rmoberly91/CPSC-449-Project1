@@ -346,7 +346,7 @@ def delete_inventory(item_id):
     db.session.commit()
     return jsonify({'message': 'Item deleted successfully'}), 200
 
-
+'''
 @app.route('/admin/inventory', methods=['GET'])
 @session_jwt_required
 def get_all_inventory_admin():
@@ -359,7 +359,7 @@ def get_all_inventory_admin():
         return jsonify({'message': 'No items in inventory'}), 404
 
     return jsonify(inventory), 200
-
+'''
 
 @app.route('/refresh', methods=['POST'])
 @jwt_required(refresh=True)  
