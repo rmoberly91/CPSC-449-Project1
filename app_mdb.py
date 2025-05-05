@@ -141,11 +141,11 @@ async def create_inventory(item: InventoryBase, user: dict = Depends(get_current
     if not isinstance(item.description, str):
         raise HTTPException(status_code=400, detail="Description must be a string")
     
-    if not isinstance(item.quantity, int):
-        raise HTTPException(status_code=400, detail="Quantity must be an integer")
+    if not isinstance(item.quantity, int) or item.quantity < 0:
+        raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer")
     
-    if not isinstance(item.price, float) or not validate_price(item.price):
-        raise HTTPException(status_code=400, detail="Price must be a float in a valid US format")
+    if not isinstance(item.price, float) or not validate_price(item.price) or item.price < 0:
+        raise HTTPException(status_code=400, detail="Price must be a float in a valid US format greater than $0.00")
     
     item_doc = item.dict()
     item_doc["owner_id"] = str(user["_id"])
