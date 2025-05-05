@@ -57,10 +57,12 @@ class Token(BaseModel):
     token_type: str
 
 class InventoryBase(BaseModel):
-    name: str
-    description: str = ""
-    quantity: int
-    price: float
+    name: str = Field(..., description="Name of the item")
+    description: str = Field("", description="Description of the item")
+    quantity: int = Field(..., gt=0, description="Quantity must be greater than 0")
+    price: float = Field(..., gt=0, description="Price must be greater than 0")
+    serves: int = Field(..., gt=0, description="Serves must be greater than 0")
+    calories: int = Field(..., gt=0, description="Calories must be greater than 0")
 
 class InventoryOut(InventoryBase):
     id: int
