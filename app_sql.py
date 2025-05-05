@@ -1,21 +1,27 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, ForeignKey
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session
+from pydantic import BaseModel, Field
+from fastapi_sessions.frontends.implementations import SessionCookie, CookieParameters
+from fastapi_sessions.backends.implementations import InMemoryBackend
+from fastapi_sessions.session_verifier import SessionVerifier
+from uuid import uuid4, UUID
 from passlib.context import CryptContext
 from jose import jwt, JWTError
+from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
+from bson import ObjectId
+from typing import Optional, List
 import os
 import re
 
 app = FastAPI()
 
-# DB config
-MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://username:password@localhost/inventory_db")
-engine = create_engine(MYSQL_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# MongoDB config
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+client = AsyncIOMotorClient(MONGO_URI)
+db = client["inventory_db"]
+users_collection = db["users"]
+inventory_collection = db["inventory"]
 
 # Auth config
 SECRET_KEY = os.getenv("SECRET_KEY", "your_secret_key")
@@ -24,27 +30,29 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# Models
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(80), unique=True, index=True, nullable=False)
-    email = Column(String(120), unique=True, nullable=False)
-    password = Column(String(200), nullable=False)
-    is_admin = Column(Boolean, default=False)
-    items = relationship("Inventory", back_populates="owner")
+# Session config
+cookie_params = CookieParameters()
+SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
+session_cookie = SessionCookie(
+    cookie_name="session_cookie",
+    identifier="general_verifier",
+    auto_error=True,
+    secret_key=SESSION_SECRET,
+    cookie_params=cookie_params,
+)
+backend = InMemoryBackend[UUID, dict]()
 
-class Inventory(Base):
-    __tablename__ = "inventory"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    description = Column(String(200))
-    quantity = Column(Integer, nullable=False)
-    price = Column(Float, nullable=False)
-    owner_id = Column(Integer, ForeignKey("users.id"))
-    owner = relationship("User", back_populates="items")
+class BasicVerifier(SessionVerifier[UUID, dict]):
+    async def verify_session(self, model: dict) -> bool:
+        return True
 
-Base.metadata.create_all(bind=engine)
+async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie)):
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="No session")
+    session_data = await backend.read(session_id)
+    if session_data is None:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return session_data
 
 # Schemas
 class UserCreate(BaseModel):
@@ -65,19 +73,16 @@ class InventoryBase(BaseModel):
     calories: int = Field(..., gt=0, description="Calories must be greater than 0")
 
 class InventoryOut(InventoryBase):
-    id: int
-    owner_id: int
+    id: str
+    owner_id: str
 
-# Dependencies
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+class SessionData(BaseModel):
+    user_id: str
+    username: str
 
+# Helpers
 def validate_email(email: str):
-    email_regex = r'^[a-zA-z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
     return re.match(email_regex, email)
 
 def validate_password(password: str):
@@ -94,8 +99,8 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[1-9]+\.[1-9]{2}$'
-    return re.match(price_regex, price)
+    price_regex = r'^\d+\.\d{2}$'
+    return re.match(price_regex, f"{price:.2f}")
 
 def hash_password(password: str):
     return pwd_context.hash(password)
@@ -109,16 +114,16 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_user_by_username(db: Session, username: str):
-    return db.query(User).filter(User.username == username).first()
+async def get_user_by_username(username: str):
+    return await users_collection.find_one({"username": username})
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-        user = get_user_by_username(db, username)
+        user = await get_user_by_username(username)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return user
@@ -127,45 +132,61 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 # Routes
 @app.post("/register")
-def register(user: UserCreate, db: Session = Depends(get_db)):
+async def register(user: UserCreate):
     # user cannot already exist
-    if db.query(User).filter(User.username == user.username).first():
+    if await users_collection.find_one({"username": user.username}):
         raise HTTPException(status_code=400, detail="User already exists")
-    
     # email cannot already exist
-    if db.query(User).filter(User.email == user.email).first():
+    if await users_collection.find_one({"email": user.email}):
         raise HTTPException(status_code=400, detail="Email already exists")
-    
     # validate email (formatting)
     if not validate_email(user.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
-
-    # validate password (8 characters, uppercase letter(s), lowercase letter(s), number(s), special character(s))
+    # validate password
     password_error = validate_password(user.password)
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
-
     hashed_pw = hash_password(user.password)
-    new_user = User(username=user.username, email=user.email, password=hashed_pw)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    user_doc = {
+        "username": user.username,
+        "email": user.email,
+        "password": hashed_pw,
+        "is_admin": False
+    }
+    await users_collection.insert_one(user_doc)
     return {"message": "User registered successfully"}
 
 @app.post("/login", response_model=Token)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = get_user_by_username(db, form_data.username)
-    if not user or not verify_password(form_data.password, user.password):
+async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await get_user_by_username(form_data.username)
+    if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
-    token = create_access_token(data={"sub": user.username})
+    token = create_access_token(data={"sub": user["username"]})
+
+    # Set session cookie using Pydantic model
+    session_id = uuid4()
+    session_data = SessionData(user_id=str(user["_id"]), username=user["username"])
+    await backend.create(session_id, session_data)
+    session_cookie.attach_to_response(response, session_id)
+
     return {"access_token": token, "token_type": "bearer"}
 
+@app.post("/logout")
+async def logout(response: Response, session_id: Optional[UUID] = Depends(session_cookie)):
+    if session_id:
+        await backend.delete(session_id)
+        session_cookie.delete_from_response(response)
+    return {"message": "Logged out"}
+
 @app.post("/inventory")
-def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    # item cannot already exist
-    if db.query(Inventory).filter(Inventory.name == item.name).first():
+async def create_inventory(
+    item: InventoryBase,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    # item cannot already exist for this user
+    if await inventory_collection.find_one({"name": item.name, "owner_id": str(user["_id"])}):
         raise HTTPException(status_code=400, detail="Item already exists")
-    
     # validate item details
     if not isinstance(item.name, str):
         raise HTTPException(status_code=400, detail="Name must be a string")
@@ -175,40 +196,62 @@ def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: U
         raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer")
     if not isinstance(item.price, float) or not validate_price(item.price) or item.price < 0:
         raise HTTPException(status_code=400, detail="Price must be a float in a valid US format greater than $0.00")
-    
-    new_item = Inventory(**item.dict(), owner_id=user.id)
-    db.add(new_item)
-    db.commit()
-    db.refresh(new_item)
-    return {"message": "Item added successfully", "item": new_item}
+    # Insert item
+    item_doc = item.dict()
+    item_doc["owner_id"] = str(user["_id"])
+    result = await inventory_collection.insert_one(item_doc)
+    item_doc["id"] = str(result.inserted_id)
+    item_doc["owner_id"] = str(user["_id"])
+    return {"message": "Item added successfully", "item": item_doc}
 
-@app.get("/inventory", response_model=list[InventoryOut])
-def get_inventory(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    items = db.query(Inventory).filter(Inventory.owner_id == user.id).all()
+@app.get("/inventory", response_model=List[InventoryOut])
+async def get_inventory(
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    cursor = inventory_collection.find({"owner_id": str(user["_id"])})
+    items = []
+    async for item in cursor:
+        item["id"] = str(item["_id"])
+        item["owner_id"] = str(item["owner_id"])
+        items.append(InventoryOut(**item))
     return items
 
 @app.get("/inventory/{item_id}", response_model=InventoryOut)
-def get_inventory_item(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
+async def get_inventory_item(
+    item_id: str,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    item = await inventory_collection.find_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
-    return item
+    item["id"] = str(item["_id"])
+    item["owner_id"] = str(item["owner_id"])
+    return InventoryOut(**item)
 
 @app.put("/inventory/{item_id}")
-def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
-    if not item:
+async def update_inventory(
+    item_id: str,
+    update: InventoryBase,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    result = await inventory_collection.update_one(
+        {"_id": ObjectId(item_id), "owner_id": str(user["_id"])},
+        {"$set": update.dict()}
+    )
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
-    for key, value in update.dict().items():
-        setattr(item, key, value)
-    db.commit()
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
-    if not item:
+async def delete_inventory(
+    item_id: str,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    result = await inventory_collection.delete_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
-    db.delete(item)
-    db.commit()
     return {"message": "Item deleted successfully"}
