@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from bson import ObjectId
 import os
+import re
 
 app = FastAPI()
 
@@ -25,6 +26,27 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Helpers
+def validate_email(email: str):
+    email_regex = r'^[a-zA-z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
+    return re.match(email_regex, email)
+
+def validate_password(password: str):
+    if len(password) < 8:
+        return "Password must be at least 8 characters long"
+    if not re.search(r'\d', password):
+        return "Password must contain at least one digit"
+    if not re.search(r'[A-Z]', password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r'[\W_]', password):
+        return "Password must contain at least one special character"
+    return None
+
+def validate_price(price: float):
+    price_regex = r'^[1-9]+\.[1-9]{2}'
+    return re.match(price_regex, price)
+
 def hash_password(password: str):
     return pwd_context.hash(password)
 
@@ -73,9 +95,21 @@ class InventoryOut(InventoryBase):
 # Routes
 @app.post("/register")
 async def register(user: UserCreate):
-    existing = await users_collection.find_one({"$or": [{"username": user.username}, {"email": user.email}]})
-    if existing:
+    existing_user = await users_collection.find_one({"$or": [{"username": user.username}]})
+    if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
+    
+    existing_email = await users_collection.find_one({"$or": [{"email": user.email}]})
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already exists")
+    
+    if not validate_email(user.email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+
+    password_error = validate_password(user.password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+
     user_doc = {
         "username": user.username,
         "email": user.email,
@@ -95,6 +129,22 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
 @app.post("/inventory")
 async def create_inventory(item: InventoryBase, user: dict = Depends(get_current_user)):
+    existing_item = await inventory_collection.find_one({"$or": [{"name": item.name}]})
+    if existing_item:
+        raise HTTPException(status_code=400, detail="Item already exists")
+    
+    if not isinstance(item.name, str):
+        raise HTTPException(status_code=400, detail="Name must be a string")
+    
+    if not isinstance(item.description, str):
+        raise HTTPException(status_code=400, detail="Description must be a string")
+    
+    if not isinstance(item.quantity, int):
+        raise HTTPException(status_code=400, detail="Quantity must be an integer")
+    
+    if not isinstance(item.price, float) or not validate_price(item.price):
+        raise HTTPException(status_code=400, detail="Price must be a float in a valid US format")
+    
     item_doc = item.dict()
     item_doc["owner_id"] = str(user["_id"])
     result = await inventory_collection.insert_one(item_doc)

@@ -7,6 +7,7 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 import os
+import re
 
 app = FastAPI()
 
@@ -73,6 +74,27 @@ def get_db():
     finally:
         db.close()
 
+def validate_email(email: str):
+    email_regex = r'^[a-zA-z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
+    return re.match(email_regex, email)
+
+def validate_password(password: str):
+    if len(password) < 8:
+        return "Password must be at least 8 characters long"
+    if not re.search(r'\d', password):
+        return "Password must contain at least one digit"
+    if not re.search(r'[A-Z]', password):
+        return "Password must contain at least one uppercase letter"
+    if not re.search(r'[a-z]', password):
+        return "Password must contain at least one lowercase letter"
+    if not re.search(r'[\W_]', password):
+        return "Password must contain at least one special character"
+    return None
+
+def validate_price(price: float):
+    price_regex = r'^[1-9]+\.[1-9]{2}'
+    return re.match(price_regex, price)
+
 def hash_password(password: str):
     return pwd_context.hash(password)
 
@@ -104,8 +126,23 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 # Routes
 @app.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter((User.username == user.username) | (User.email == user.email)).first():
+    # user cannot already exist
+    if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(status_code=400, detail="User already exists")
+    
+    # email cannot already exist
+    if db.query(User).filter(User.email == user.email).first():
+        raise HTTPException(status_code=400, detail="Email already exists")
+    
+    # validate email (formatting)
+    if not validate_email(user.email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
+
+    # validate password (8 characters, uppercase letter(s), lowercase letter(s), number(s), special character(s))
+    password_error = validate_password(user.password)
+    if password_error:
+        raise HTTPException(status_code=400, detail=password_error)
+
     hashed_pw = hash_password(user.password)
     new_user = User(username=user.username, email=user.email, password=hashed_pw)
     db.add(new_user)
@@ -123,6 +160,20 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
 
 @app.post("/inventory")
 def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # item cannot already exist
+    if db.query(Inventory).filter(Inventory.name == item.name).first():
+        raise HTTPException(status_code=400, detail="Item already exists")
+    
+    # validate item details
+    if not isinstance(item.name, str):
+        raise HTTPException(status_code=400, detail="Name must be a string")
+    if not isinstance(item.description, str):
+        raise HTTPException(status_code=400, detail="Description must be a string")
+    if not isinstance(item.quantity, int):
+        raise HTTPException(status_code=400, detail="Quantity must be an integer")
+    if not isinstance(item.price, float) or not validate_price(item.price):
+        raise HTTPException(status_code=400, detail="Price must be a float in a valid US format")
+    
     new_item = Inventory(**item.dict(), owner_id=user.id)
     db.add(new_item)
     db.commit()
