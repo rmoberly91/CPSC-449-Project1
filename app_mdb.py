@@ -43,14 +43,9 @@ session_cookie = SessionCookie(
 backend = InMemoryBackend[UUID, dict]()
 
 class BasicVerifier(SessionVerifier[UUID, dict]):
-    def __init__(self, *, identifier: str, backend, auto_error: bool):
-        super().__init__(identifier=identifier, auto_error=auto_error)
-        self.backend = backend
-
     async def verify_session(self, model: dict) -> bool:
-        return True  # Add custom logic if needed
+        return True
 
-verifier = BasicVerifier(identifier="general_verifier", backend=backend, auto_error=True)
 
 async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie)):
     if session_id is None:
