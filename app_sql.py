@@ -92,7 +92,7 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[1-9]+\.[1-9]{2}'
+    price_regex = r'^[1-9]+\.[1-9]{2}$'
     return re.match(price_regex, price)
 
 def hash_password(password: str):
