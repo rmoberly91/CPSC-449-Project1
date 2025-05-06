@@ -14,7 +14,6 @@ from typing import Optional
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from .dependencies import get_db
 import os
 import re
 import logging
@@ -90,6 +89,7 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
+    is_admin: bool = False  
 
 class Token(BaseModel):
     access_token: str
@@ -197,7 +197,13 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=password_error)
 
     hashed_pw = hash_password(user.password)
-    new_user = User(username=user.username, email=user.email, password=hashed_pw)
+    # Pass is_admin from the request
+    new_user = User(
+        username=user.username,
+        email=user.email,
+        password=hashed_pw,
+        is_admin=user.is_admin  # <-- Use the value from the request
+    )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
@@ -274,7 +280,8 @@ def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-def delete_inventory_admin(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin_required))
+# Delete_inventory_admin needs to be built on
+#def delete_inventory_admin(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin_required))
 def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), 
                      session_data: dict = Depends(get_session_data)):
     item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
