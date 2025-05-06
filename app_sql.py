@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)
 
 # DB config
-MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:password@localhost/inventory_db")
+MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://root:happilyLaptopApril778@localhost/inventory_db")
 engine = create_engine(MYSQL_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -38,7 +38,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Session config
 SESSION_EXPIRE_MINUTES = 2
-cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
+cookie_params = CookieParameters(
+    max_age=SESSION_EXPIRE_MINUTES * 60,
+    secure=True  # Only send cookie over HTTPS
+)
 SESSION_SECRET = os.getenv("SESSION_SECFRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
