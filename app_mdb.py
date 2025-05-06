@@ -52,7 +52,6 @@ class BasicVerifier(SessionVerifier[UUID, dict]):
     async def verify_session(self, model: dict) -> bool:
         return True
 
-
 async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie)):
     if session_id is None:
         raise HTTPException(status_code=401, detail="No session")
@@ -63,7 +62,7 @@ async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie))
 
 # Helpers
 def validate_email(email: str):
-    email_regex = r'^[a-zA-z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9]+\.[a-zA-Z0-9-.]+$'
     return re.match(email_regex, email)
 
 def validate_password(password: str):
@@ -80,8 +79,8 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[1-9]+\.[1-9]{2}$'
-    return re.match(price_regex, price)
+    price_regex = r'^\d+\.\d{2}$'
+    return re.match(price_regex, f"{price:.2f}")
 
 def hash_password(password: str):
     return pwd_context.hash(password)
@@ -130,24 +129,24 @@ class InventoryOut(InventoryBase):
     id: str
     owner_id: str
 
+class SessionData(BaseModel):
+    user_id: str
+    username: str
+
 # Routes
 @app.post("/register")
 async def register(user: UserCreate):
-    existing_user = await users_collection.find_one({"$or": [{"username": user.username}]})
+    existing_user = await users_collection.find_one({"username": user.username})
     if existing_user:
         raise HTTPException(status_code=400, detail="User already exists")
-    
-    existing_email = await users_collection.find_one({"$or": [{"email": user.email}]})
+    existing_email = await users_collection.find_one({"email": user.email})
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already exists")
-    
     if not validate_email(user.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
-
     password_error = validate_password(user.password)
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
-
     user_doc = {
         "username": user.username,
         "email": user.email,
@@ -164,9 +163,9 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     token = create_access_token(data={"sub": user["username"]})
 
-    # Set session cookie
+    # Set session cookie using Pydantic model
     session_id = uuid4()
-    session_data = {"user_id": str(user["_id"]), "username": user["username"]}
+    session_data = SessionData(user_id=str(user["_id"]), username=user["username"])
     await backend.create(session_id, session_data)
     session_cookie.attach_to_response(response, session_id)
 
@@ -180,50 +179,66 @@ async def logout(response: Response, session_id: Optional[UUID] = Depends(sessio
     return {"message": "Logged out"}
 
 @app.post("/inventory")
-async def create_inventory(item: InventoryBase, user: dict = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
-    existing_item = await inventory_collection.find_one({"$or": [{"name": item.name}]})
+async def create_inventory(
+    item: InventoryBase,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
+    existing_item = await inventory_collection.find_one({"name": item.name, "owner_id": str(user["_id"])})
     if existing_item:
         raise HTTPException(status_code=400, detail="Item already exists")
-    
     if not isinstance(item.name, str):
         raise HTTPException(status_code=400, detail="Name must be a string")
-    
     if not isinstance(item.description, str):
         raise HTTPException(status_code=400, detail="Description must be a string")
-    
     if not isinstance(item.quantity, int) or item.quantity < 0:
         raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer")
-    
     if not isinstance(item.price, float) or not validate_price(item.price) or item.price < 0:
         raise HTTPException(status_code=400, detail="Price must be a float in a valid US format greater than $0.00")
-    
     item_doc = item.dict()
     item_doc["owner_id"] = str(user["_id"])
     result = await inventory_collection.insert_one(item_doc)
     item_doc["id"] = str(result.inserted_id)
+    item_doc["owner_id"] = str(item_doc["owner_id"])
+    # Remove _id if present (shouldn't be, but for safety)
+    item_doc.pop("_id", None)
     return {"message": "Item added successfully", "item": item_doc}
 
 @app.get("/inventory", response_model=list[InventoryOut])
-async def get_inventory(user: dict = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
+async def get_inventory(
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
     cursor = inventory_collection.find({"owner_id": str(user["_id"])})
     items = []
     async for item in cursor:
         item["id"] = str(item["_id"])
+        item["owner_id"] = str(item["owner_id"])
+        item.pop("_id", None)
         items.append(InventoryOut(**item))
     return items
 
 @app.get("/inventory/{item_id}", response_model=InventoryOut)
-async def get_inventory_item(item_id: str, user: dict = Depends(get_current_user), 
-                             session_data: dict = Depends(get_session_data)):
+async def get_inventory_item(
+    item_id: str,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
     item = await inventory_collection.find_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
     item["id"] = str(item["_id"])
+    item["owner_id"] = str(item["owner_id"])
+    item.pop("_id", None)
     return InventoryOut(**item)
 
 @app.put("/inventory/{item_id}")
-async def update_inventory(item_id: str, update: InventoryBase, user: dict = Depends(get_current_user),
-    session_data: dict = Depends(get_session_data)):
+async def update_inventory(
+    item_id: str,
+    update: InventoryBase,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
     result = await inventory_collection.update_one(
         {"_id": ObjectId(item_id), "owner_id": str(user["_id"])},
         {"$set": update.dict()}
@@ -233,16 +248,19 @@ async def update_inventory(item_id: str, update: InventoryBase, user: dict = Dep
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-async def delete_inventory(item_id: str, user: dict = Depends(get_current_user),
-    session_data: dict = Depends(get_session_data)):
+async def delete_inventory(
+    item_id: str,
+    user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
     result = await inventory_collection.delete_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"message": "Item deleted successfully"}
 
-@app.exception_handler(Exception)  # Custom exception handler
-async def global_exception_handler(request: Request, exc: Exception): # Global exception handler
-    if isinstance(exc, RequestValidationError): # Handle validation errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, RequestValidationError):
         return JSONResponse(
             status_code=422,
             content={
@@ -250,24 +268,24 @@ async def global_exception_handler(request: Request, exc: Exception): # Global e
                 "details": exc.errors(),
                 "body": exc.body,
             },
-        ) 
-    if isinstance(exc, HTTPException): # Handle HTTP exceptions
+        )
+    if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.detail},
         )
-    if isinstance(exc, DuplicateKeyError): # Handle duplicate key errors
+    if isinstance(exc, DuplicateKeyError):
         return JSONResponse(
             status_code=400,
             content={"error": "An item with that name already exists"},
         )
-    if isinstance(exc, PyMongoError): # Handle MongoDB errors
+    if isinstance(exc, PyMongoError):
         logger.error(f"MongoDB error on {request.url.path}: {exc}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"error": f"Database error: {str(exc)}"},
         )
-    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True) # Log unhandled exceptions
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"error": "Internal Server Error"},
