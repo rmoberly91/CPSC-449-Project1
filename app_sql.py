@@ -104,12 +104,12 @@ class Token(BaseModel):
     token_type: str
 
 class InventoryBase(BaseModel):
-    name: str = Field(..., description="Name of the item")
-    description: str = Field("", description="Description of the item")
-    quantity: int = Field(..., gt=0, description="Quantity must be greater than 0")
-    price: float = Field(..., gt=0, description="Price must be greater than 0")
-    serves: int = Field(..., gt=0, description="Serves must be greater than 0")
-    calories: int = Field(..., gt=0, description="Calories must be greater than 0")
+    name: str # = Field(..., description="Name of the item")
+    description: str # = Field("", description="Description of the item")
+    quantity: int # = Field(..., gt=0, description="Quantity must be greater than 0")
+    price: float # = Field(..., gt=0, description="Price must be greater than 0")
+    serves: int # = Field(..., gt=0, description="Serves must be greater than 0")
+    calories: int # = Field(..., gt=0, description="Calories must be greater than 0")
 
 class InventoryOut(InventoryBase):
     id: int
@@ -243,10 +243,14 @@ def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: U
         raise HTTPException(status_code=400, detail="Name must be a string")
     if not isinstance(item.description, str):
         raise HTTPException(status_code=400, detail="Description must be a string")
-    if not isinstance(item.quantity, int) or item.quantity < 0:
-        raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer")
-    if not isinstance(item.price, float) or not validate_price(item.price) or item.price < 0:
+    if not isinstance(item.quantity, int) or item.quantity < 1:
+        raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer greater than 0")
+    if not isinstance(item.price, float) or not validate_price(item.price) or item.price <= 0:
         raise HTTPException(status_code=400, detail="Price must be a float in a valid US format greater than $0.00")
+    if not isinstance(item.serves, int) or item.serves <= 0:
+        raise HTTPException(status_code=400, detail="Serving size must be greater than 0")
+    if not isinstance(item.calories, int) or item.calories < 0:
+        raise HTTPException(status_code=400, detail="Calories cannot be below 0")
     new_item = Inventory(**item.dict(), owner_id=user.id)
     db.add(new_item)
     db.commit()
