@@ -142,7 +142,7 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[1-9]+\.[0-9]{2}$'
+    price_regex = r'^[0-9]+\.[0-9]{2}$'
     return re.match(price_regex, f"{price:.2f}")
 
 def hash_password(password: str):
@@ -284,7 +284,17 @@ def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = D
     db.commit()
     return {"message": "Item deleted successfully"}
 
-@app.exception_handler(Exception)
+@app.delete("/admin/inventory/{item_id}")
+def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
+    item = db.query(Inventory).filter(Inventory.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    db.delete(item)
+    db.commit()
+    return {"message": f"Item '{item.name}' (ID {item_id}) deleted by admin."}
+
+
+@app.exception_handler(Exception) # Global exception handler
 async def global_exception_handler(request: Request, exc: Exception): 
     if isinstance(exc, RequestValidationError):
         return JSONResponse(
