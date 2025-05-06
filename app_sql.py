@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, ForeignKey
-from sqlalchemy.orm import sessionmaker, declarative_base, relationship, Session
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, relationship
 from fastapi_sessions.frontends.implementations import SessionCookie, CookieParameters
 from fastapi_sessions.backends.implementations import InMemoryBackend
 from fastapi_sessions.session_verifier import SessionVerifier
@@ -36,7 +37,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Session config
-# SET TO EXPIRE IN 30 MINUTES
 SESSION_EXPIRE_MINUTES = 2
 cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
 SESSION_SECRET = os.getenv("SESSION_SECFRET", "your_session_secret")
@@ -293,6 +293,11 @@ def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin
     db.delete(item)
     db.commit()
     return {"message": f"Item '{item.name}' (ID {item_id}) deleted by admin."}
+
+# You may need to define InventoryResponse if you use it in /admin/inventory
+class InventoryResponse(InventoryBase):
+    id: int
+    owner_id: int
 
 @app.get("/admin/inventory", response_model=list[InventoryResponse])
 def get_all_inventory_items(db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
