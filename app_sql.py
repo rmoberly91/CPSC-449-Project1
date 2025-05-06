@@ -45,6 +45,7 @@ session_cookie = SessionCookie(
     auto_error=True,
     secret_key=SESSION_SECRET,
     cookie_params=cookie_params,
+    verifier=verifier,
 )
 backend = InMemoryBackend[UUID, dict]()
 
@@ -137,7 +138,7 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[1-9]+\.[0-9]{2}$'
+    price_regex = r'^[0-9]+\.[0-9]{2}$'
     return re.match(price_regex, f"{price:.2f}")
 
 def hash_password(password: str):
