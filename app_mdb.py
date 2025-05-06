@@ -112,6 +112,7 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
+    is_admin: bool = False  # <-- Add this line
 
 class Token(BaseModel):
     access_token: str
@@ -133,14 +134,6 @@ class SessionData(BaseModel):
     user_id: str
     username: str
 
-
-# Admin-only dependency
-async def admin_required(user: dict = Depends(get_current_user)):
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
-
 # Routes
 @app.post("/register")
 async def register(user: UserCreate):
@@ -159,7 +152,7 @@ async def register(user: UserCreate):
         "username": user.username,
         "email": user.email,
         "password": hash_password(user.password),
-        "is_admin": False
+        "is_admin": user.is_admin
     }
     await users_collection.insert_one(user_doc)
     return {"message": "User registered successfully"}
@@ -256,7 +249,6 @@ async def update_inventory(
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-async def delete_inventory_admin(item_id: str, db = Depends(get_db), user: dict = Depends(admin_required))
 async def delete_inventory(
     item_id: str,
     user: dict = Depends(get_current_user),
