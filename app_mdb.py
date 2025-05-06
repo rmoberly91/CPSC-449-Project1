@@ -38,7 +38,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- Session Setup ---
-cookie_params = CookieParameters()
+# SET TO EXPIRE IN 30 MINUTES
+SESSION_EXPIRE_MINUTES = 2
+cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
 SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
@@ -59,6 +61,10 @@ async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie))
     session_data = await backend.read(session_id)
     if session_data is None:
         raise HTTPException(status_code=401, detail="Invalid session")
+    # Check expiration
+    if session_data.expires_at < datetime.utcnow():
+        await backend.delete(session_id)
+        raise HTTPException(status_code=401, detail="Session expired")
     return session_data
 
 # Helpers
@@ -118,7 +124,7 @@ class UserCreate(BaseModel):
     username: str
     email: str
     password: str
-    is_admin: bool = False  # <-- Add this line
+    is_admin: bool = False
 
 class Token(BaseModel):
     access_token: str
@@ -139,6 +145,7 @@ class InventoryOut(InventoryBase):
 class SessionData(BaseModel):
     user_id: str
     username: str
+    expires_at: datetime
 
 # Routes
 @app.post("/register")
@@ -172,7 +179,12 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
 
     # Set session cookie using Pydantic model
     session_id = uuid4()
-    session_data = SessionData(user_id=str(user["_id"]), username=user["username"])
+    expires_at = datetime.utcnow() + timedelta(minutes=SESSION_EXPIRE_MINUTES)
+    session_data = SessionData(
+        user_id=str(user["_id"]),
+        username=user["username"],
+        expires_at=expires_at
+    )
     await backend.create(session_id, session_data)
     session_cookie.attach_to_response(response, session_id)
 
@@ -207,7 +219,6 @@ async def create_inventory(
     result = await inventory_collection.insert_one(item_doc)
     item_doc["id"] = str(result.inserted_id)
     item_doc["owner_id"] = str(item_doc["owner_id"])
-    # Remove _id if present (shouldn't be, but for safety)
     item_doc.pop("_id", None)
     return {"message": "Item added successfully", "item": item_doc}
 

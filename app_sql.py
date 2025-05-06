@@ -36,8 +36,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Session config
-cookie_params = CookieParameters()
-SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
+# SET TO EXPIRE IN 30 MINUTES
+SESSION_EXPIRE_MINUTES = 2
+cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
+SESSION_SECRET = os.getenv("SESSION_SECFRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
     identifier="general_verifier",
@@ -51,13 +53,16 @@ class BasicVerifier(SessionVerifier[UUID, dict]):
     async def verify_session(self, model: dict) -> bool:
         return True  
 
-
 async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie)):
     if session_id is None:
         raise HTTPException(status_code=401, detail="No session")
     session_data = await backend.read(session_id)
     if session_data is None:
         raise HTTPException(status_code=401, detail="Invalid session")
+    # Check expiration
+    if session_data.expires_at < datetime.utcnow():
+        await backend.delete(session_id)
+        raise HTTPException(status_code=401, detail="Session expired")
     return session_data
 
 # Models
@@ -77,8 +82,8 @@ class Inventory(Base):
     description = Column(String(200))
     quantity = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
-    serves = Column(Integer, nullable=False)      # <-- Add this line
-    calories = Column(Integer, nullable=False)    # <-- Add this line
+    serves = Column(Integer, nullable=False)
+    calories = Column(Integer, nullable=False)
     owner_id = Column(Integer, ForeignKey("users.id"))
     owner = relationship("User", back_populates="items")
 
@@ -110,6 +115,7 @@ class InventoryOut(InventoryBase):
 class SessionData(BaseModel):
     user_id: int
     username: str
+    expires_at: datetime
 
 # Dependencies
 def get_db():
@@ -168,41 +174,30 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise HTTPException(status_code=401, detail="Could not validate token")
 
-
 # Admin-only dependency
 def admin_required(user: User = Depends(get_current_user)):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
-
 # Routes
 @app.post("/register")
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    # user cannot already exist
     if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(status_code=400, detail="User already exists")
-    
-    # email cannot already exist
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email already exists")
-    
-    # validate email (formatting)
     if not validate_email(user.email):
         raise HTTPException(status_code=400, detail="Invalid email format")
-
-    # validate password (8 characters, uppercase letter(s), lowercase letter(s), number(s), special character(s))
     password_error = validate_password(user.password)
     if password_error:
         raise HTTPException(status_code=400, detail=password_error)
-
     hashed_pw = hash_password(user.password)
-    # Pass is_admin from the request
     new_user = User(
         username=user.username,
         email=user.email,
         password=hashed_pw,
-        is_admin=user.is_admin  # <-- Use the value from the request
+        is_admin=user.is_admin
     )
     db.add(new_user)
     db.commit()
@@ -219,7 +214,12 @@ async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depen
 
     # Set session cookie using Pydantic model
     session_id = uuid4()
-    session_data = SessionData(user_id=user.id, username=user.username)
+    expires_at = datetime.utcnow() + timedelta(minutes=SESSION_EXPIRE_MINUTES)
+    session_data = SessionData(
+        user_id=user.id,
+        username=user.username,
+        expires_at=expires_at
+    )
     await backend.create(session_id, session_data)
     session_cookie.attach_to_response(response, session_id)
 
@@ -234,11 +234,8 @@ async def logout(response: Response, session_id: Optional[UUID] = Depends(sessio
 
 @app.post("/inventory")
 def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: User = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
-    # item cannot already exist
     if db.query(Inventory).filter(Inventory.name == item.name).first():
         raise HTTPException(status_code=400, detail="Item already exists")
-    
-    # validate item details
     if not isinstance(item.name, str):
         raise HTTPException(status_code=400, detail="Name must be a string")
     if not isinstance(item.description, str):
@@ -247,7 +244,6 @@ def create_inventory(item: InventoryBase, db: Session = Depends(get_db), user: U
         raise HTTPException(status_code=400, detail="Quantity must be a non-negative integer")
     if not isinstance(item.price, float) or not validate_price(item.price) or item.price < 0:
         raise HTTPException(status_code=400, detail="Price must be a float in a valid US format greater than $0.00")
-    
     new_item = Inventory(**item.dict(), owner_id=user.id)
     db.add(new_item)
     db.commit()
@@ -280,8 +276,6 @@ def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-# Delete_inventory_admin needs to be built on
-#def delete_inventory_admin(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin_required))
 def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), 
                      session_data: dict = Depends(get_session_data)):
     item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
@@ -303,7 +297,7 @@ def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin
 
 @app.exception_handler(Exception) # Global exception handler
 async def global_exception_handler(request: Request, exc: Exception): 
-    if isinstance(exc, RequestValidationError): # Validation error
+    if isinstance(exc, RequestValidationError):
         return JSONResponse(
             status_code=422,
             content={
@@ -312,24 +306,24 @@ async def global_exception_handler(request: Request, exc: Exception):
                 "body": exc.body,
             },
         )
-    if isinstance(exc, HTTPException): # HTTP error
+    if isinstance(exc, HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.detail},
         )
-    if isinstance(exc, IntegrityError): # Integrity error
+    if isinstance(exc, IntegrityError):
         logger.error(f"Integrity error on {request.url.path}: {exc}", exc_info=True)
         return JSONResponse(
             status_code=400,
             content={"error": "Database integrity error", "detail": str(exc.orig)},
         )
-    if isinstance(exc, SQLAlchemyError): # SQLAlchemy error
+    if isinstance(exc, SQLAlchemyError):
         logger.error(f"SQLAlchemy error on {request.url.path}: {exc}", exc_info=True)
         return JSONResponse(
             status_code=500,
             content={"error": "Database error", "detail": str(exc)},
         )
-    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True) # All other errors
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"error": "Internal Server Error"},
