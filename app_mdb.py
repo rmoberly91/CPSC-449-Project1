@@ -17,6 +17,7 @@ import logging
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pymongo.errors import DuplicateKeyError, PyMongoError
+from bson.objectid import ObjectId
 
 app = FastAPI()
 logger = logging.getLogger(__name__)
@@ -266,7 +267,6 @@ async def delete_inventory(
 
 @app.delete("/admin/inventory/{item_id}")
 async def delete_any_inventory_item(item_id: str, db = Depends(get_db), admin_user: dict = Depends(admin_required)):
-    from bson.objectid import ObjectId
 
     try:
         result = await db["inventory"].delete_one({"_id": ObjectId(item_id)})
