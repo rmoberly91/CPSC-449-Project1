@@ -1,11 +1,16 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Response, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
+from fastapi_sessions.frontends.implementations import SessionCookie, CookieParameters
+from fastapi_sessions.backends.implementations import InMemoryBackend
+from fastapi_sessions.session_verifier import SessionVerifier
+from uuid import uuid4, UUID
 from passlib.context import CryptContext
 from jose import jwt, JWTError
 from motor.motor_asyncio import AsyncIOMotorClient
 from datetime import datetime, timedelta
 from bson import ObjectId
+from typing import Optional
 import os
 import re
 
@@ -24,6 +29,31 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# --- Session Setup ---
+cookie_params = CookieParameters()
+SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
+session_cookie = SessionCookie(
+    cookie_name="session_cookie",
+    identifier="general_verifier",
+    auto_error=True,
+    secret_key=SESSION_SECRET,
+    cookie_params=cookie_params,
+)
+backend = InMemoryBackend[UUID, dict]()
+
+class BasicVerifier(SessionVerifier[UUID, dict]):
+    async def verify_session(self, model: dict) -> bool:
+        return True
+
+
+async def get_session_data(session_id: Optional[UUID] = Depends(session_cookie)):
+    if session_id is None:
+        raise HTTPException(status_code=401, detail="No session")
+    session_data = await backend.read(session_id)
+    if session_data is None:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return session_data
 
 # Helpers
 def validate_email(email: str):
@@ -122,15 +152,29 @@ async def register(user: UserCreate):
     return {"message": "User registered successfully"}
 
 @app.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     user = await users_collection.find_one({"username": form_data.username})
     if not user or not verify_password(form_data.password, user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     token = create_access_token(data={"sub": user["username"]})
+
+    # Set session cookie
+    session_id = uuid4()
+    session_data = {"user_id": str(user["_id"]), "username": user["username"]}
+    await backend.create(session_id, session_data)
+    session_cookie.attach_to_response(response, session_id)
+
     return {"access_token": token, "token_type": "bearer"}
 
+@app.post("/logout")
+async def logout(response: Response, session_id: Optional[UUID] = Depends(session_cookie)):
+    if session_id:
+        await backend.delete(session_id)
+        session_cookie.delete_from_response(response)
+    return {"message": "Logged out"}
+
 @app.post("/inventory")
-async def create_inventory(item: InventoryBase, user: dict = Depends(get_current_user)):
+async def create_inventory(item: InventoryBase, user: dict = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
     existing_item = await inventory_collection.find_one({"$or": [{"name": item.name}]})
     if existing_item:
         raise HTTPException(status_code=400, detail="Item already exists")
@@ -154,7 +198,7 @@ async def create_inventory(item: InventoryBase, user: dict = Depends(get_current
     return {"message": "Item added successfully", "item": item_doc}
 
 @app.get("/inventory", response_model=list[InventoryOut])
-async def get_inventory(user: dict = Depends(get_current_user)):
+async def get_inventory(user: dict = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
     cursor = inventory_collection.find({"owner_id": str(user["_id"])})
     items = []
     async for item in cursor:
@@ -163,7 +207,8 @@ async def get_inventory(user: dict = Depends(get_current_user)):
     return items
 
 @app.get("/inventory/{item_id}", response_model=InventoryOut)
-async def get_inventory_item(item_id: str, user: dict = Depends(get_current_user)):
+async def get_inventory_item(item_id: str, user: dict = Depends(get_current_user), 
+                             session_data: dict = Depends(get_session_data)):
     item = await inventory_collection.find_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -171,7 +216,8 @@ async def get_inventory_item(item_id: str, user: dict = Depends(get_current_user
     return InventoryOut(**item)
 
 @app.put("/inventory/{item_id}")
-async def update_inventory(item_id: str, update: InventoryBase, user: dict = Depends(get_current_user)):
+async def update_inventory(item_id: str, update: InventoryBase, user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)):
     result = await inventory_collection.update_one(
         {"_id": ObjectId(item_id), "owner_id": str(user["_id"])},
         {"$set": update.dict()}
@@ -181,7 +227,8 @@ async def update_inventory(item_id: str, update: InventoryBase, user: dict = Dep
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
-async def delete_inventory(item_id: str, user: dict = Depends(get_current_user)):
+async def delete_inventory(item_id: str, user: dict = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)):
     result = await inventory_collection.delete_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
