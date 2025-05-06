@@ -291,6 +291,16 @@ def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = D
     db.commit()
     return {"message": "Item deleted successfully"}
 
+@app.delete("/admin/inventory/{item_id}")
+def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
+    item = db.query(Inventory).filter(Inventory.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    db.delete(item)
+    db.commit()
+    return {"message": f"Item '{item.name}' (ID {item_id}) deleted by admin."}
+
+
 @app.exception_handler(Exception) # Global exception handler
 async def global_exception_handler(request: Request, exc: Exception): 
     if isinstance(exc, RequestValidationError): # Validation error
