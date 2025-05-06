@@ -40,7 +40,10 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # --- Session Setup ---
 # SET TO EXPIRE IN 30 MINUTES
 SESSION_EXPIRE_MINUTES = 2
-cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
+cookie_params = CookieParameters(
+    max_age=SESSION_EXPIRE_MINUTES * 60,
+    secure=True  # Only send cookie over HTTPS
+)
 SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
@@ -114,8 +117,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Could not validate token")
     
-def admin_required(user: User = Depends(get_current_user)):
-    if not user.is_admin:
+def admin_required(user: dict = Depends(get_current_user)):
+    if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
@@ -277,10 +280,9 @@ async def delete_inventory(
     return {"message": "Item deleted successfully"}
 
 @app.delete("/admin/inventory/{item_id}")
-async def delete_any_inventory_item(item_id: str, db = Depends(get_db), admin_user: dict = Depends(admin_required)):
-
+async def delete_any_inventory_item(item_id: str, admin_user: dict = Depends(admin_required)):
     try:
-        result = await db["inventory"].delete_one({"_id": ObjectId(item_id)})
+        result = await inventory_collection.delete_one({"_id": ObjectId(item_id)})
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid item ID format")
 
@@ -290,8 +292,8 @@ async def delete_any_inventory_item(item_id: str, db = Depends(get_db), admin_us
     return {"message": f"Item with ID {item_id} deleted by admin."}
 
 @app.get("/admin/inventory")
-async def get_all_inventory_items(db = Depends(get_db), admin_user: dict = Depends(admin_required)):
-    items = await db["inventory"].find().to_list(1000)
+async def get_all_inventory_items(admin_user: dict = Depends(admin_required)):
+    items = await inventory_collection.find().to_list(1000)
     for item in items:
         item["_id"] = str(item["_id"]) 
     return items
