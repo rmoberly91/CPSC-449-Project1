@@ -39,7 +39,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- Session Setup ---
 # SET TO EXPIRE IN 30 MINUTES
-SESSION_EXPIRE_MINUTES = 2
+SESSION_EXPIRE_MINUTES = 30
 cookie_params = CookieParameters(
     max_age=SESSION_EXPIRE_MINUTES * 60,
     secure=True  # Only send cookie over HTTPS
@@ -48,7 +48,7 @@ SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
     identifier="general_verifier",
-    auto_error=True,
+    auto_error=False,
     secret_key=SESSION_SECRET,
     cookie_params=cookie_params,
 )
