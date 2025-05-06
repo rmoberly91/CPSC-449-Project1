@@ -289,6 +289,13 @@ async def delete_any_inventory_item(item_id: str, db = Depends(get_db), admin_us
 
     return {"message": f"Item with ID {item_id} deleted by admin."}
 
+@app.get("/admin/inventory")
+async def get_all_inventory_items(db = Depends(get_db), admin_user: dict = Depends(admin_required)):
+    items = await db["inventory"].find().to_list(1000)
+    for item in items:
+        item["_id"] = str(item["_id"]) 
+    return items
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     if isinstance(exc, RequestValidationError):

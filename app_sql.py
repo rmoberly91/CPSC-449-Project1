@@ -294,6 +294,9 @@ def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin
     db.commit()
     return {"message": f"Item '{item.name}' (ID {item_id}) deleted by admin."}
 
+@app.get("/admin/inventory", response_model=list[InventoryResponse])
+def get_all_inventory_items(db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
+    return db.query(Inventory).all()
 
 @app.exception_handler(Exception) # Global exception handler
 async def global_exception_handler(request: Request, exc: Exception): 
