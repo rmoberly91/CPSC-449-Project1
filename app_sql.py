@@ -11,10 +11,17 @@ from passlib.context import CryptContext
 from jose import jwt, JWTError
 from datetime import datetime, timedelta
 from typing import Optional
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from .dependencies import get_db
 import os
 import re
+import logging
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.ERROR)
 
 # DB config
 MYSQL_URL = os.getenv("MYSQL_URL", "mysql+pymysql://user:password@localhost/inventory_db")
@@ -267,3 +274,37 @@ def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = D
     db.delete(item)
     db.commit()
     return {"message": "Item deleted successfully"}
+
+@app.exception_handler(Exception) # Global exception handler
+async def global_exception_handler(request: Request, exc: Exception): 
+    if isinstance(exc, RequestValidationError): # Validation error
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Validation Error",
+                "details": exc.errors(),
+                "body": exc.body,
+            },
+        )
+    if isinstance(exc, HTTPException): # HTTP error
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail},
+        )
+    if isinstance(exc, IntegrityError): # Integrity error
+        logger.error(f"Integrity error on {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=400,
+            content={"error": "Database integrity error", "detail": str(exc.orig)},
+        )
+    if isinstance(exc, SQLAlchemyError): # SQLAlchemy error
+        logger.error(f"SQLAlchemy error on {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Database error", "detail": str(exc)},
+        )
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True) # All other errors
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error"},
+    )

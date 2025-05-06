@@ -13,8 +13,14 @@ from bson import ObjectId
 from typing import Optional
 import os
 import re
+import logging
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 app = FastAPI()
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.ERROR)
 
 # MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
@@ -233,3 +239,36 @@ async def delete_inventory(item_id: str, user: dict = Depends(get_current_user),
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Item not found")
     return {"message": "Item deleted successfully"}
+
+@app.exception_handler(Exception)  # Custom exception handler
+async def global_exception_handler(request: Request, exc: Exception): # Global exception handler
+    if isinstance(exc, RequestValidationError): # Handle validation errors
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Validation Error",
+                "details": exc.errors(),
+                "body": exc.body,
+            },
+        ) 
+    if isinstance(exc, HTTPException): # Handle HTTP exceptions
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.detail},
+        )
+    if isinstance(exc, DuplicateKeyError): # Handle duplicate key errors
+        return JSONResponse(
+            status_code=400,
+            content={"error": "An item with that name already exists"},
+        )
+    if isinstance(exc, PyMongoError): # Handle MongoDB errors
+        logger.error(f"MongoDB error on {request.url.path}: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Database error: {str(exc)}"},
+        )
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}", exc_info=True) # Log unhandled exceptions
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error"},
+    )
