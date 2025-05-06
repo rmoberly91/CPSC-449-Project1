@@ -38,6 +38,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # --- Session Setup ---
+# SET TO EXPIRE IN 30 MINUTES
 SESSION_EXPIRE_MINUTES = 2
 cookie_params = CookieParameters(max_age=SESSION_EXPIRE_MINUTES * 60)  # Cookie expires with session
 SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
