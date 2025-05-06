@@ -42,7 +42,7 @@ cookie_params = CookieParameters(
     max_age=SESSION_EXPIRE_MINUTES * 60,
     secure=True  # Only send cookie over HTTPS
 )
-SESSION_SECRET = os.getenv("SESSION_SECFRET", "your_session_secret")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "your_session_secret")
 session_cookie = SessionCookie(
     cookie_name="session_cookie",
     identifier="general_verifier",
