@@ -45,7 +45,6 @@ session_cookie = SessionCookie(
     auto_error=True,
     secret_key=SESSION_SECRET,
     cookie_params=cookie_params,
-    verifier=verifier,
 )
 backend = InMemoryBackend[UUID, dict]()
 
@@ -138,7 +137,7 @@ def validate_password(password: str):
     return None
 
 def validate_price(price: float):
-    price_regex = r'^[0-9]+\.[0-9]{2}$'
+    price_regex = r'^[1-9]+\.[0-9]{2}$'
     return re.match(price_regex, f"{price:.2f}")
 
 def hash_password(password: str):
@@ -168,6 +167,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         return user
     except JWTError:
         raise HTTPException(status_code=401, detail="Could not validate token")
+
+
+# Admin-only dependency
+def admin_required(user: User = Depends(get_current_user)):
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
 
 # Routes
 @app.post("/register")
@@ -267,6 +274,7 @@ def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(
     return {"message": "Item updated successfully"}
 
 @app.delete("/inventory/{item_id}")
+def delete_inventory_admin(item_id: int, db: Session = Depends(get_db), user: User = Depends(admin_required))
 def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), 
                      session_data: dict = Depends(get_session_data)):
     item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
