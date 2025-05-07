@@ -178,10 +178,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise HTTPException(status_code=401, detail="Could not validate token")
 
 # Admin-only dependency
-def admin_required(user: User = Depends(get_current_user)):
+def admin_required(
+    user: User = Depends(get_current_user),
+    session_data: dict = Depends(get_session_data)
+):
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
 
 # Routes
 @app.post("/register")
@@ -266,17 +270,21 @@ def get_inventory(db: Session = Depends(get_db), user: User = Depends(get_curren
 @app.get("/inventory/{item_id}", response_model=InventoryOut)
 def get_inventory_item(item_id: int, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
+    item = db.query(Inventory).filter(Inventory.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
     return item
 
 @app.put("/inventory/{item_id}")
 def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user), session_data: dict = Depends(get_session_data)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
+    item = db.query(Inventory).filter(Inventory.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
     for key, value in update.dict().items():
         setattr(item, key, value)
     db.commit()
@@ -285,15 +293,17 @@ def update_inventory(item_id: int, update: InventoryBase, db: Session = Depends(
 @app.delete("/inventory/{item_id}")
 def delete_inventory(item_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user), 
                      session_data: dict = Depends(get_session_data)):
-    item = db.query(Inventory).filter(Inventory.id == item_id, Inventory.owner_id == user.id).first()
+    item = db.query(Inventory).filter(Inventory.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
     db.delete(item)
     db.commit()
     return {"message": "Item deleted successfully"}
 
 @app.delete("/admin/inventory/{item_id}")
-def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
+def delete_any_inventory_item(item_id: int, db: Session = Depends(get_db), admin_user: User = Depends(admin_required),session_data: dict = Depends(get_session_data)):
     item = db.query(Inventory).filter(Inventory.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -307,7 +317,7 @@ class InventoryResponse(InventoryBase):
     owner_id: int
 
 @app.get("/admin/inventory", response_model=list[InventoryResponse])
-def get_all_inventory_items(db: Session = Depends(get_db), admin_user: User = Depends(admin_required)):
+def get_all_inventory_items(db: Session = Depends(get_db), admin_user: User = Depends(admin_required),session_data: dict = Depends(get_session_data)):
     return db.query(Inventory).all()
 
 @app.exception_handler(Exception) # Global exception handler

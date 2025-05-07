@@ -117,7 +117,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Could not validate token")
     
-def admin_required(user: dict = Depends(get_current_user)):
+def admin_required(user: dict = Depends(get_current_user),session_data: dict = Depends(get_session_data)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
@@ -249,9 +249,12 @@ async def get_inventory_item(
     user: dict = Depends(get_current_user),
     session_data: dict = Depends(get_session_data)
 ):
-    item = await inventory_collection.find_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
+    item = await inventory_collection.find_one({"_id": ObjectId(item_id)})
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item["owner_id"] != str(user["_id"]):
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
+
     item["id"] = str(item["_id"])
     item["owner_id"] = str(item["owner_id"])
     item.pop("_id", None)
@@ -264,13 +267,19 @@ async def update_inventory(
     user: dict = Depends(get_current_user),
     session_data: dict = Depends(get_session_data)
 ):
+    item = await inventory_collection.find_one({"_id": ObjectId(item_id)})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if item["owner_id"] != str(user["_id"]):
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
     result = await inventory_collection.update_one(
         {"_id": ObjectId(item_id), "owner_id": str(user["_id"])},
         {"$set": update.dict()}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Item not found")
+    if result.modified_count == 0:
+        return {"message": "No changes made (data may already be up to date)"}
     return {"message": "Item updated successfully"}
+
 
 @app.delete("/inventory/{item_id}")
 async def delete_inventory(
@@ -278,13 +287,18 @@ async def delete_inventory(
     user: dict = Depends(get_current_user),
     session_data: dict = Depends(get_session_data)
 ):
-    result = await inventory_collection.delete_one({"_id": ObjectId(item_id), "owner_id": str(user["_id"])})
-    if result.deleted_count == 0:
+    item = await inventory_collection.find_one({"_id": ObjectId(item_id)})
+    if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item["owner_id"] != str(user["_id"]):
+        raise HTTPException(status_code=403, detail="Unauthorized access to this item")
+
+    await inventory_collection.delete_one({"_id": ObjectId(item_id)})
     return {"message": "Item deleted successfully"}
 
 @app.delete("/admin/inventory/{item_id}")
-async def delete_any_inventory_item(item_id: str, admin_user: dict = Depends(admin_required)):
+async def delete_any_inventory_item(item_id: str, admin_user: dict = Depends(admin_required),
+    session_data: dict = Depends(get_session_data)):
     try:
         result = await inventory_collection.delete_one({"_id": ObjectId(item_id)})
     except Exception:
@@ -296,7 +310,8 @@ async def delete_any_inventory_item(item_id: str, admin_user: dict = Depends(adm
     return {"message": f"Item with ID {item_id} deleted by admin."}
 
 @app.get("/admin/inventory")
-async def get_all_inventory_items(admin_user: dict = Depends(admin_required)):
+async def get_all_inventory_items(admin_user: dict = Depends(admin_required),
+    session_data: dict = Depends(get_session_data)):
     items = await inventory_collection.find().to_list(1000)
     for item in items:
         item["_id"] = str(item["_id"]) 
